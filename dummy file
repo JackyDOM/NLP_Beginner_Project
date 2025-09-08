@@ -1,0 +1,282 @@
+'use client';
+
+import React, { useEffect, useState } from 'react';
+
+import { Scanner } from '@yudiel/react-qr-scanner';
+import { AlertCircle, QrCode } from 'lucide-react';
+
+import { Alert, AlertDescription } from '@sp/ui/components/shadcn/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@sp/ui/components/shadcn/dialog';
+import TextView from '@sp/ui/components/shared/TextView';
+
+interface QrScannerModalProps {
+  isOpen: boolean;
+  onClose: (open: boolean) => void;
+  onScan: (qrData: string) => void;
+  title?: string;
+}
+
+export default function QrScannerModal({
+  isOpen,
+  onClose,
+  onScan,
+  title = 'ស្វែងរកតាមលេខកូដ QR',
+}: QrScannerModalProps) {
+  const [qrScannerError, setQrScannerError] = useState<string>('');
+  const [useBasicQrConstraints, setUseBasicQrConstraints] = useState(false);
+  const [czurCameraDeviceId, setCzurCameraDeviceId] = useState<string | null>(null);
+
+  // Enumerate devices to find CZUR Fancy camera
+  useEffect(() => {
+    const findCzurCamera = async () => {
+      try {
+        // Enumerate devices without requesting permission first
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const czurCamera = devices.find(
+          device =>
+            device.kind === 'videoinput' &&
+            device.label &&
+            device.label.toLowerCase().includes('czur fancy'),
+        );
+
+        if (czurCamera && czurCamera.deviceId) {
+          setCzurCameraDeviceId(czurCamera.deviceId);
+        } else {
+          console.log('CZUR Fancy camera not found, using default camera');
+        }
+      } catch (error) {
+        console.warn('Failed to enumerate devices:', error);
+      }
+    };
+
+    if (isOpen) {
+      findCzurCamera();
+    }
+  }, [isOpen]);
+
+  const handleScan = (detectedCodes: any[]) => {
+    setQrScannerError(''); // Clear any previous errors
+    const data = detectedCodes[0];
+    if (data && data.rawValue) {
+      onScan(data.rawValue);
+    }
+  };
+
+  const handleError = (error: unknown) => {
+    console.error('QR Scanner Error:', error);
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorName = error instanceof Error ? error.name : '';
+
+    if (errorName === 'OverconstrainedError' || errorMessage.includes('OverconstrainedError')) {
+      console.warn('Camera constraints too restrictive, falling back to basic settings');
+      setUseBasicQrConstraints(true);
+      setQrScannerError('កំពុងព្យាយាមជាមួយការកំណត់កាមេរ៉ាសាមញ្ញ...');
+
+      // Clear error after a short delay to retry
+      setTimeout(() => {
+        setQrScannerError('');
+      }, 3000);
+    } else if (errorName === 'NotAllowedError' || errorMessage.includes('Permission denied')) {
+      setQrScannerError('សូមអនុញ្ញាតការប្រើប្រាស់កាមេរ៉ាដើម្បីស្កេន QR កូដ');
+    } else if (errorName === 'NotFoundError' || errorMessage.includes('No camera found')) {
+      setQrScannerError('រកមិនឃើញកាមេរ៉ា សូមពិនិត្យការតភ្ជាប់');
+    } else {
+      setQrScannerError(`កំហុសកាមេរ៉ា: ${errorMessage}`);
+    }
+  };
+
+  const handleOpenChange = (open: boolean) => {
+    onClose(open);
+    if (!open) {
+      // Reset QR scanner states when closing
+      setQrScannerError('');
+      setUseBasicQrConstraints(false);
+      setCzurCameraDeviceId(null);
+    }
+  };
+
+  // Get camera constraints based on available devices
+  const getCameraConstraints = () => {
+    if (useBasicQrConstraints) {
+      return czurCameraDeviceId
+        ? {
+            deviceId: { exact: czurCameraDeviceId },
+            aspectRatio: 1,
+          }
+        : {
+            facingMode: 'environment',
+            aspectRatio: 1,
+          };
+    }
+
+    return czurCameraDeviceId
+      ? {
+          deviceId: { exact: czurCameraDeviceId },
+          aspectRatio: { ideal: 1, min: 0.9, max: 1.1 },
+          width: { ideal: 480, min: 320, max: 720 },
+          height: { ideal: 480, min: 320, max: 720 },
+          frameRate: { ideal: 20, max: 30 },
+        }
+      : {
+          facingMode: 'environment',
+          aspectRatio: { ideal: 1, min: 0.9, max: 1.1 },
+          width: { ideal: 480, min: 320, max: 720 },
+          height: { ideal: 480, min: 320, max: 720 },
+          frameRate: { ideal: 20, max: 30 },
+        };
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+      <DialogContent className="w-[95vw] max-w-[500px] md:max-w-[600px] max-h-[90vh] md:h-auto rounded-2xl p-4 md:p-6 flex flex-col">
+        <DialogHeader className="text-center md:text-left">
+          <DialogTitle className="flex items-center justify-center md:justify-start text-lg md:text-xl">
+            <QrCode className="mr-2 h-6 w-6" />
+            <TextView weight="semibold">{title}</TextView>
+          </DialogTitle>
+          <DialogDescription className="py-2 md:py-4 flex-1 flex flex-col">
+            <div className="w-full flex-1 flex flex-col justify-center">
+              {qrScannerError && (
+                <Alert variant="destructive" className="mb-4 rounded-xl border-2">
+                  <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                  <AlertDescription className="text-sm md:text-base">
+                    {qrScannerError}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="relative w-full aspect-square max-w-[320px] md:max-w-md mx-auto bg-black rounded-lg overflow-hidden">
+                <Scanner
+                  formats={['qr_code']}
+                  constraints={getCameraConstraints()}
+                  onScan={handleScan}
+                  onError={handleError}
+                  components={{
+                    audio: false,
+                    zoom: false,
+                    finder: false,
+                  }}
+                  allowMultiple={false}
+                  scanDelay={800}
+                  styles={{
+                    container: {
+                      width: '100%',
+                      height: '100%',
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                    video: {
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      borderRadius: '0.5rem',
+                    },
+                  }}
+                />
+
+                {/* QR Frame Overlay - ប្រអប់ពណ៌ក្រហម */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="relative">
+                    {/* មុំប្រអប់ពណ៌ក្រហម */}
+                    <div className="w-40 h-40 md:w-56 md:h-56">
+                      {/* មុំលើឆ្វេង */}
+                      <div className="absolute top-0 left-0 w-8 h-8">
+                        <div className="absolute top-0 left-0 w-6 h-1 bg-red-500" />
+                        <div className="absolute top-0 left-0 w-1 h-6 bg-red-500" />
+                      </div>
+
+                      {/* មុំលើស្តាំ */}
+                      <div className="absolute top-0 right-0 w-8 h-8">
+                        <div className="absolute top-0 right-0 w-6 h-1 bg-red-500" />
+                        <div className="absolute top-0 right-0 w-1 h-6 bg-red-500" />
+                      </div>
+
+                      {/* មុំក្រោមឆ្វេង */}
+                      <div className="absolute bottom-0 left-0 w-8 h-8">
+                        <div className="absolute bottom-0 left-0 w-6 h-1 bg-red-500" />
+                        <div className="absolute bottom-0 left-0 w-1 h-6 bg-red-500" />
+                      </div>
+
+                      {/* មុំក្រោមស្តាំ */}
+                      <div className="absolute bottom-0 right-0 w-8 h-8">
+                        <div className="absolute bottom-0 right-0 w-6 h-1 bg-red-500" />
+                        <div className="absolute bottom-0 right-0 w-1 h-6 bg-red-500" />
+                      </div>
+                    </div>
+
+                    {/* ខ្សែស្កេន */}
+                    <div className="absolute inset-0 w-40 h-40 md:w-56 md:h-56 overflow-hidden">
+                      <div
+                        className="absolute top-0 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-green-400 to-transparent opacity-80"
+                        style={{
+                          animation: 'qr-scan 2.5s ease-in-out infinite',
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* សេចក្តីណែនាំ */}
+                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
+                  <div className="bg-black/70 backdrop-blur-sm rounded-lg px-4 py-2">
+                    <p className="text-white text-sm font-medium text-center">
+                      សូមដាក់ QR កូដក្នុងប្រអប់ពណ៌ក្រហម
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* CSS Animation */}
+              <style jsx>{`
+                @keyframes qr-scan {
+                  0% {
+                    transform: translateY(0);
+                    opacity: 0;
+                  }
+                  10% {
+                    opacity: 0.8;
+                  }
+                  90% {
+                    opacity: 0.8;
+                  }
+                  100% {
+                    transform: translateY(160px);
+                    opacity: 0;
+                  }
+                }
+
+                @media (min-width: 768px) {
+                  @keyframes qr-scan {
+                    0% {
+                      transform: translateY(0);
+                      opacity: 0;
+                    }
+                    10% {
+                      opacity: 0.8;
+                    }
+                    90% {
+                      opacity: 0.8;
+                    }
+                    100% {
+                      transform: translateY(224px);
+                      opacity: 0;
+                    }
+                  }
+                }
+              `}</style>
+            </div>
+          </DialogDescription>
+        </DialogHeader>
+      </DialogContent>
+    </Dialog>
+  );
+}
