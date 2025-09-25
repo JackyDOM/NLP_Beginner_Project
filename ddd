@@ -1,0 +1,413 @@
+from typing import Optional, List, Dict
+from datetime import date
+from fastapi import FastAPI, APIRouter, Header, HTTPException, Form
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, validator
+import logging
+import uvicorn
+import json
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Disability Registration API",
+    description="API for registering disability information",
+    docs_custom_timeout=60  # Increase Swagger UI timeout
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Restrict to specific origins in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize router
+router = APIRouter(tags=["Register"])
+
+# --------------------
+# Response Models
+# --------------------
+class ScoreItem(BaseModel):
+    keyname: str
+    keyscore: int
+
+class SuccessData(BaseModel):
+    id: int
+    disability_name: str
+    disability_family_name: Optional[str]
+    disability_given_name: Optional[str]
+    disability_name_eng: Optional[str]
+    disability_family_name_en: Optional[str]
+    disability_given_name_en: Optional[str]
+    disability_getinfor: Optional[str]
+    nation: Optional[str]
+    gender: Optional[str]
+    date_of_birth: Optional[str]
+    national_id: Optional[str]
+    family_code: Optional[str]
+    idpoor_status: Optional[str]
+    idpoor_number: Optional[str]
+    family_code_idpoor: Optional[str]
+    job: Optional[str]
+    phone_number: Optional[str]
+    vacinestatus: Optional[str]
+    vacinedate: Optional[str]
+    reason_disability: Optional[str]
+    live_with_who: Optional[str]
+    disability_code: Optional[str]
+    disability_id: Optional[str]
+    disability_member_code: Optional[str]
+    year_start_disability: Optional[str]
+    disability_type: Optional[str]
+    disability_type_detail: Optional[str]
+    disability_level: Optional[int]
+    comments: Optional[str]
+    disability_photo: Optional[str]
+    disability_photo_infor: Optional[str]
+    disability_photo_path: Optional[str]
+    disability_photo_doc: Optional[str]
+    status: Optional[int]
+    status_printing: Optional[int]
+    status_cityprint: Optional[int]
+    created_by: Optional[str]
+    updated_by: Optional[str]
+    submit_date: Optional[str]
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    status_card: Optional[int]
+    total_score: Optional[int]
+    social_benefit_status: Optional[int]
+    keystatus: Optional[int]
+    province_id_old: Optional[str]
+    province_id: Optional[str]
+    district_id_old: Optional[str]
+    district_id: Optional[str]
+    commune_id_old: Optional[str]
+    commune_id: Optional[str]
+    village_id_old: Optional[str]
+    village_id: Optional[str]
+    child_education_level: Optional[str]
+    is_child: Optional[int]
+    is_educated: Optional[str]
+    education_level: Optional[str]
+    have_income: Optional[str]
+    primary_job: Optional[str]
+    find_job: Optional[str]
+    no_job_reason: Optional[str]
+    no_job_reason_other: Optional[str]
+    no_tvet: Optional[str]
+    is_tvet: Optional[str]
+    uuid: Optional[str]
+    house_hold_id: Optional[str]
+    card_version: Optional[int]
+    printed_province_id: Optional[str]
+    printed_district_id: Optional[str]
+    printed_commune_id: Optional[str]
+    printed_village_id: Optional[str]
+    provincial_approved_by: Optional[str]
+    provincial_approved_date: Optional[str]
+    ministry_approved_by: Optional[str]
+    ministry_approved_date: Optional[str]
+    printed_by: Optional[str]
+    printed_date: Optional[str]
+    spid: Optional[str]
+    spid_date: Optional[str]
+    submit_spid_date: Optional[str]
+    card_photo: Optional[str]
+    daily_help: Optional[str]
+    chronic_diseases: Optional[str]
+    is_printed_manual: Optional[int]
+    send_reinterview_date: Optional[str]
+    send_reinterview_by: Optional[str]
+    send_modify_date: Optional[str]
+    send_modify_by: Optional[str]
+    commune_updated_date: Optional[str]
+    commune_updated_by: Optional[str]
+    die_updated_date: Optional[str]
+    die_updated_by: Optional[str]
+    closed_reinterview_date: Optional[str]
+    closed_reinterview_by: Optional[str]
+    is_old_data: Optional[int]
+    is_delivery: Optional[int]
+    provincial_delivery: Optional[int]
+    provincial_delivery_date: Optional[str]
+    commune_delivery: Optional[int]
+    commune_delivery_date: Optional[str]
+    disability_photo_backup: Optional[str]
+    is_disabled: Optional[int]
+    status_backup: Optional[str]
+    is_removed: Optional[int]
+    data_noted: Optional[str]
+
+class SuccessResponse(BaseModel):
+    error: bool = False
+    message: str
+    data: SuccessData
+
+class ErrorResponse(BaseModel):
+    error: bool = True
+    message: str
+    details: Optional[Dict[str, List[str]]] = None
+
+# --------------------
+# POST Endpoint
+# --------------------
+@router.post("/register", response_model=SuccessResponse, responses={
+    400: {"model": ErrorResponse},
+    409: {"model": ErrorResponse}
+})
+async def register_disability(
+    user_id: int = Form(...),
+    disability_getinfor: Optional[str] = Form(None),
+    disability_family_name: str = Form(...),
+    disability_given_name: str = Form(...),
+    disability_name: str = Form(...),
+    disability_family_name_en: Optional[str] = Form(None),
+    disability_given_name_en: Optional[str] = Form(None),
+    disability_name_eng: Optional[str] = Form(None),
+    gender: int = Form(...),
+    national_id: Optional[str] = Form(None),
+    family_code: Optional[str] = Form(None),
+    phone_number: Optional[str] = Form(None),
+    idpoor_id: Optional[str] = Form(None),
+    family_code_idpoor: Optional[str] = Form(None),
+    vacine_status: Optional[int] = Form(None),
+    vacine_date: Optional[date] = Form(None),
+    job: Optional[str] = Form(None),
+    village_id: str = Form(...),
+    date_of_birth: date = Form(...),
+    live_with_who: str = Form(...),
+    reason_disability: str = Form(...),
+    created_by: int = Form(...),
+    year_start_disability: int = Form(...),
+    submit_date: date = Form(...),
+    score_question: str = Form(...),  # JSON string for List[ScoreItem]
+    score_status_live: Optional[bool] = Form(None),
+    disability_photo: Optional[str] = Form(None),  # Simplified to string
+    disability_photo_infor: Optional[str] = Form(None),
+    disability_photo_path: Optional[str] = Form(None),
+    disability_photo_doc: Optional[str] = Form(None),
+    child_education_level: Optional[str] = Form(None),
+    is_educated: Optional[str] = Form(None),
+    education_level: Optional[str] = Form(None),
+    have_income: Optional[str] = Form(None),
+    primary_job: Optional[str] = Form(None),
+    find_job: Optional[str] = Form(None),
+    no_job_reason: Optional[str] = Form(None),
+    no_job_reason_other: Optional[str] = Form(None),
+    no_tvet: Optional[str] = Form(None),
+    is_tvet: Optional[str] = Form(None),
+    daily_help: Optional[str] = Form(None),
+    chronic_diseases: Optional[str] = Form(None),
+    idpoor_status: Optional[str] = Form(None),
+    authorization: str = Header(...)
+):
+    logger.debug(f"Received request with Authorization: {authorization}")
+    logger.debug(f"Request data: user_id={user_id}, disability_name={disability_name}")
+
+    try:
+        # Authorization check
+        if not authorization.startswith("Bearer "):
+            logger.error("Invalid authorization token")
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponse(
+                    error=True,
+                    message="Invalid authorization token"
+                ).dict()
+            )
+
+        # Validate required fields
+        for field, value in [
+            ("disability_family_name", disability_family_name),
+            ("disability_given_name", disability_given_name),
+            ("disability_name", disability_name)
+        ]:
+            if not value or value.strip() == "":
+                logger.error(f"Validation failed: {field} is required")
+                raise HTTPException(
+                    status_code=400,
+                    detail=ErrorResponse(
+                        error=True,
+                        message="Validation failed, please fill in all required fields!",
+                        details={field: [f"The {field.replace('_', ' ')} field is required."]}
+                    ).dict()
+                )
+
+        # Parse score_question JSON string
+        try:
+            score_question_list = json.loads(score_question)
+            score_items = [ScoreItem(**item) for item in score_question_list]
+        except json.JSONDecodeError:
+            logger.error("Invalid score_question JSON format")
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponse(
+                    error=True,
+                    message="Invalid score_question format"
+                ).dict()
+            )
+
+        # Simulate duplicate check
+        if user_id == 115:
+            logger.warning("Duplicate user_id detected")
+            raise HTTPException(
+                status_code=409,
+                detail=ErrorResponse(
+                    error=True,
+                    message="duplicate_beneficiary",
+                    details={"detail": "error save beneficiary"}
+                ).dict()
+            )
+
+        # Calculate total score
+        total_score = sum(item.keyscore for item in score_items)
+
+        # Prepare response data (matching your example)
+        response_data = SuccessData(
+            id=360245,
+            disability_name=disability_name,
+            disability_family_name=disability_family_name,
+            disability_given_name=disability_given_name,
+            disability_name_eng=disability_name_eng,
+            disability_family_name_en=disability_family_name_en,
+            disability_given_name_en=disability_given_name_en,
+            disability_getinfor=disability_getinfor,
+            nation="khmer",
+            gender=str(gender),
+            date_of_birth=str(date_of_birth),
+            national_id=national_id,
+            family_code=family_code,
+            idpoor_status=idpoor_status,
+            idpoor_number=idpoor_id,
+            family_code_idpoor=family_code_idpoor,
+            job=job,
+            phone_number=phone_number,
+            vacinestatus=str(vacine_status) if vacine_status else None,
+            vacinedate=str(vacine_date) if vacine_date else None,
+            reason_disability=reason_disability,
+            live_with_who=live_with_who,
+            disability_code=village_id + "2677816",
+            disability_id=None,
+            disability_member_code=None,
+            year_start_disability=str(year_start_disability),
+            disability_type="Q1",
+            disability_type_detail="Q1_4,Q6_1,Q6_2,Q6_3",
+            disability_level=3,
+            comments=None,
+            disability_photo=disability_photo,
+            disability_photo_infor=disability_photo_infor,
+            disability_photo_path=disability_photo_path,
+            disability_photo_doc=disability_photo_doc,
+            status=0,
+            status_printing=1,
+            status_cityprint=0,
+            created_by=str(created_by),
+            updated_by=None,
+            submit_date=str(submit_date) + " 00:00:00",
+            created_at="2025-08-07 23:35:45",
+            updated_at="2025-08-07 23:35:45",
+            status_card=0,
+            total_score=total_score,
+            social_benefit_status=0,
+            keystatus=1,
+            province_id_old=None,
+            province_id="02",
+            district_id_old=None,
+            district_id="0202",
+            commune_id_old=None,
+            commune_id="020203",
+            village_id_old=None,
+            village_id=village_id,
+            child_education_level=child_education_level,
+            is_child=0,
+            is_educated=is_educated,
+            education_level=education_level,
+            have_income=have_income,
+            primary_job=primary_job,
+            find_job=find_job,
+            no_job_reason=no_job_reason,
+            no_job_reason_other=no_job_reason_other,
+            no_tvet=no_tvet,
+            is_tvet=is_tvet,
+            uuid=None,
+            house_hold_id=None,
+            card_version=0,
+            printed_province_id=None,
+            printed_district_id=None,
+            printed_commune_id=None,
+            printed_village_id=None,
+            provincial_approved_by=None,
+            provincial_approved_date=None,
+            ministry_approved_by=None,
+            ministry_approved_date=None,
+            printed_by=None,
+            printed_date=None,
+            spid=None,
+            spid_date=None,
+            submit_spid_date=None,
+            card_photo=None,
+            daily_help=daily_help,
+            chronic_diseases=chronic_diseases,
+            is_printed_manual=0,
+            send_reinterview_date=None,
+            send_reinterview_by=None,
+            send_modify_date=None,
+            send_modify_by=None,
+            commune_updated_date=None,
+            commune_updated_by=None,
+            die_updated_date=None,
+            die_updated_by=None,
+            closed_reinterview_date=None,
+            closed_reinterview_by=None,
+            is_old_data=1,
+            is_delivery=0,
+            provincial_delivery=0,
+            provincial_delivery_date=None,
+            commune_delivery=0,
+            commune_delivery_date=None,
+            disability_photo_backup=None,
+            is_disabled=0,
+            status_backup=None,
+            is_removed=0,
+            data_noted=None
+        )
+
+        logger.info("Registration successful")
+        return SuccessResponse(
+            error=False,
+            message="save beneficiary complete",
+            data=response_data
+        )
+
+    except HTTPException as e:
+        logger.error(f"HTTP error: {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse(
+                error=True,
+                message="Internal server error"
+            ).dict()
+        )
+
+# Mount router to app
+app.include_router(router)
+
+# Run the application
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        workers=4,
+        log_level="debug"
+    )
