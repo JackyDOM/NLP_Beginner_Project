@@ -1,0 +1,1146 @@
+===================== insertdisability ==========================
+
+
+# insert new disability memebers
+@router.post(
+    "/insertdisability",
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new disability member",
+    description="Create a new disability registration record following the external API format"
+)
+async def insert_disability(
+    # Authentication
+    keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+    
+    # Personal Information - Khmer
+    disability_family_name: Annotated[str, Form()],
+    disability_given_name: Annotated[str, Form()],
+    # disability_name: Annotated[str, Form()],
+    
+    # Basic Information
+    gender: Annotated[int, Form()],
+    date_of_birth: Annotated[str, Form()],
+
+    # ID Poor Information
+    family_code_idpoor: Annotated[str, Form()],
+    
+    # Location and Living Situation
+    village_id: Annotated[str, Form()],
+    live_with_who: Annotated[str, Form()],
+    
+    # Disability Information
+    reason_disability: Annotated[str, Form()],
+    year_start_disability: Annotated[int, Form()],
+    submit_date: Annotated[str, Form()],
+
+    # Education Information
+    is_educated: Annotated[str, Form()],
+
+    # Asset Information
+    disability_photo: Annotated[UploadFile, Form()],
+    disability_photo_full: Annotated[UploadFile, Form()],
+
+    fp_right_photos: Annotated[list[UploadFile], Form()] = [],
+    fp_left_photos: Annotated[list[UploadFile], Form()] = [],
+
+    fp_right_metadatas: Annotated[list[str], Form()] = [],
+    fp_left_metadatas: Annotated[list[str], Form()] = [],
+
+
+    is_disability_fingerprint: Annotated[bool | None, Form()] = None,
+    disability_fingerprint_photo: Annotated[UploadFile | None, File()] = None,
+
+    # Optional Related Documents (all optional)
+    family_book: Annotated[UploadFile | None, Form()] = None,  # សៀវភៅគ្រួសារ
+    residence_book: Annotated[UploadFile | None, Form()] = None,  # សៀវភៅស្នាក់នៅ
+    national_id_card: Annotated[UploadFile | None, Form()] = None,  # អត្តសញ្ញាណបណ្ណ
+    equity_card: Annotated[UploadFile | None, Form()] = None,  # បណ្ណសមធ័ម៌
+
+    # Optional parameters with defaults
+    score_status_live: Annotated[str, Form()] = None,
+
+    # Scoring Information
+    score_question: Annotated[Optional[str], Form()] = None,
+
+    # Personal Information - English
+    disability_family_name_en: Annotated[Optional[str], Form()] = None,
+    disability_given_name_en: Annotated[Optional[str], Form()] = None,
+    disability_name_eng: Annotated[Optional[str], Form()] = None,
+
+    # disability_name: Annotated[Optional[str], Form()] = None,
+
+    disability_getinfor: Annotated[Optional[str], Form()] = None,
+
+    national_id: Annotated[Optional[str], Form()] = None,
+    family_code: Annotated[Optional[str], Form()] = None,
+    phone_number: Annotated[Optional[str], Form()] = None,
+    idpoor_id: Annotated[Optional[str], Form()] = None,
+    idpoor_status: Annotated[Optional[str], Form()] = None,
+
+    # Vaccination Information
+    vacine_date: Annotated[Optional[str], Form()] = None,
+    vacine_status: Annotated[Optional[str], Form()] = None,
+
+    job: Annotated[Optional[str], Form()] = None,
+
+    child_education_level: Annotated[Optional[str], Form()] = None,
+    education_level: Annotated[Optional[str], Form()] = None,
+
+    have_income: Annotated[Optional[str], Form()] = None,
+    primary_job: Annotated[Optional[str], Form()] = None,
+
+    # Employment Information
+    no_job_reason: Annotated[Optional[str], Form()] = None,
+    no_job_reason_other: Annotated[Optional[str], Form()] = None,
+    find_job: Annotated[Optional[str], Form()] = None,
+
+    # Training Information
+    no_tvet: Annotated[Optional[str], Form()] = None,
+
+    # Support Information
+    daily_help: Annotated[Optional[str], Form()] = None,
+    chronic_diseases: Annotated[Optional[str], Form()] = None,
+    is_tvet: Annotated[Optional[str], Form()] = None,
+
+) -> dict:
+        
+    # Validate local DB user
+    db_user = await validate_user(keycloak_user.username, keycloak_user, db)
+    user_id = db_user["id"]
+
+    # Get user_id_pwd from UserProfile table (DMIS info)
+    user_profile = await crud_user_profile.get_by_user_id(db, user_id)
+    if not user_profile:
+        raise HTTPException(
+            status_code=404, 
+            detail="User profile with DMIS info not found. Please fetch /user-profile first."
+        )
+    user_profile_id = user_profile.id 
+    user_id_pwd = user_profile.user_id_pwd  # DMIS ID if needed
+
+    logger.debug("UserProfile ID: %s", user_profile_id)
+    logger.debug("UserProfile DMIS ID: %s", user_id_pwd)
+
+    normalized_family_name = normalize_name(disability_family_name)
+    normalized_given_name = normalize_name(disability_given_name)
+
+    # --- DUPLICATE VALIDATION ---
+    existing_record = await crud_main.get_by_family_name_and_given_name(
+        db,
+        normalized_family_name,
+        normalized_given_name
+    )
+
+    if existing_record:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"ជនមានពិការភាព {disability_family_name} {disability_given_name} បានចុះឈ្មោះរួចហើយ"
+        )
+
+    # Khmer-only fields
+    validate_khmer_only(disability_getinfor, "disability_getinfor")
+    validate_khmer_only(disability_family_name, "disability_family_name")
+    validate_khmer_only(disability_given_name, "disability_given_name")
+    # validate_khmer_only(disability_name, "disability_name")
+
+    # English-only fields
+    validate_english_only(disability_family_name_en, "disability_family_name_en")
+    validate_english_only(disability_given_name_en, "disability_given_name_en")
+    validate_english_only(disability_name_eng, "disability_name_eng")
+
+    # Cambodia phone number
+    validate_cambodia_phone(phone_number)
+    
+    try:
+        # Map gender integer to Gender enum
+        gender_mapping = {0: Gender.OTHER, 1: Gender.MALE, 2: Gender.FEMALE}
+        gender_enum = gender_mapping.get(gender, Gender.MALE)
+        
+        # Convert year_start_disability to a date (assuming January 1st of that year)
+        disability_date_val = date(year_start_disability, 1, 1) if year_start_disability else None
+        submit_date_val = datetime.strptime(submit_date, "%Y-%m-%d").date() if submit_date else None
+
+        # --- Handle score_question ---
+        score_question_array = [
+            {"keyname": "Q1_1_1", "keyscore": 0 ,"answer_code": "A1", "category": "C1"},
+            {"keyname": "Q1_1_3", "keyscore": 0 ,"answer_code": "A1", "category": "C1"},
+            {"keyname": "Q1_1_4", "keyscore": 0 ,"answer_code": "A1", "category": "C1"},
+            {"keyname": "Q1_1_5", "keyscore": 0 ,"answer_code": "A1", "category": "C1"},
+            {"keyname": "Q1_1_6", "keyscore": 0 ,"answer_code": "A1", "category": "C1"},
+            {"keyname": "Q1_1_7", "keyscore": 0 ,"answer_code": "A1", "category": "C1"},
+            {"keyname": "Q1_1_2", "keyscore": 0 ,"answer_code": "A1", "category": "C1"},
+        ]
+
+        if score_question and score_question.strip():
+            try:
+                questions = json.loads(score_question) # <-- frontend data parsed here
+                raw_json_to_save = score_question.strip()
+                logging.info("Using score_question from frontend")
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON in score_question: {e}")
+        else:
+            questions = score_question_array
+            raw_json_to_save = json.dumps(score_question_array)
+            logging.info("No score_question from frontend → using default array")
+        
+
+        if score_question and score_question.strip():
+            try:
+                questions_from_frontend = json.loads(score_question)
+                logging.info("Using score_question from frontend")
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON in score_question: {e}")
+        else:
+            questions_from_frontend = None
+
+
+        # Validate disability fingerprint photo (independent feature)
+        if is_disability_fingerprint:
+            if not disability_fingerprint_photo:
+                raise HTTPException(
+                    status_code=400,
+                    detail="ត្រូវមានរូបថតស្នាមម្រាមដៃសម្រាប់ជនមានពិការភាព",
+                )
+
+        # Create the registration data object
+        registration_data = MainModel(
+            gender=gender_enum,
+            national_id=national_id,
+            family_code=family_code,
+            disability_date=disability_date_val,
+            family_name=disability_family_name,
+            given_name=disability_given_name,
+            family_name_en=disability_family_name_en,
+            given_name_en=disability_given_name_en,
+            phone_number=phone_number,         
+            idpoor_id=idpoor_id,
+            family_code_idpoor=family_code_idpoor,
+            vacine_status=str(vacine_status),
+            vacine_date=vacine_date,
+            job=job,
+            village_id=village_id,
+            dob=date_of_birth,          
+            live_with_who=live_with_who,
+            reason_disability=reason_disability,
+            year_start_disability=str(year_start_disability),
+            score_question=None,
+            score_status_live=score_status_live,
+            is_educated=is_educated,
+            education_level=education_level,
+            have_income=have_income,
+            primary_job=primary_job,
+            find_job=find_job,
+            no_job_reason=no_job_reason,
+            no_job_reason_other=no_job_reason_other,
+            no_tvet_reason=no_tvet, 
+            is_tvet=is_tvet,
+            daily_help=daily_help,
+            chronic_diseases=chronic_diseases,
+            idpoor_status=idpoor_status,
+            submit_date=submit_date_val,
+            child_education_level=child_education_level,
+            gazetteer_code=village_id,
+            created_by=user_id,
+            disability_code=None,
+            is_disability_fingerprint=is_disability_fingerprint,
+            # disability_fingerprint_photo = disability_fingerprint_photo,
+            # fingerprint=None
+        )
+        
+
+        # insert into db - PWD internal service
+        db.add(registration_data)
+        await db.flush()
+
+        # Convert dates to ISO format strings (YYYY-MM-DD) for JSON compatibility
+        # disability_date_str = disability_date_val.isoformat() if disability_date_val else None
+        submit_date_str = submit_date_val.isoformat() if submit_date_val else None
+
+        # Convert files to base64 for DMIS
+        disability_photo_b64 = await uploadfile_to_small_base64(disability_photo)
+        disability_photo_full_b64 = await uploadfile_to_small_base64(disability_photo_full)
+        national_id_card_b64 = await uploadfile_to_small_base64(national_id_card)
+        equity_card_b64 = await uploadfile_to_small_base64(equity_card)
+
+        # Reset file pointers after reading for base64 conversion
+        # so they can be read again for MinIO upload
+        if disability_photo:
+            await disability_photo.seek(0)
+        if disability_photo_full:
+            await disability_photo_full.seek(0)
+        if national_id_card:
+            await national_id_card.seek(0)
+        if equity_card:
+            await equity_card.seek(0)
+
+        if not national_id_card_b64:
+            national_id_card_b64 = disability_photo_b64
+
+        if not equity_card_b64:
+            equity_card_b64 = disability_photo_b64
+
+
+        # call insert disability endpoint dmis
+        dmis_payload = {
+            "user_id": user_id,
+            "disability_family_name": disability_family_name,
+            "disability_given_name": disability_given_name,
+            "disability_name": f"{disability_family_name} {disability_given_name}",
+            "disability_family_name_en": disability_family_name_en,
+            "disability_given_name_en": disability_given_name_en,
+            "disability_name_eng": disability_name_eng,
+            "gender": gender,
+            "national_id": national_id,
+            "family_code": family_code,
+            "phone_number": phone_number,
+            "date_of_birth": date_of_birth,
+            "idpoor_id": idpoor_id,
+            "family_code_idpoor": family_code_idpoor,
+            "idpoor_status": idpoor_status,
+            "vacine_status": vacine_status,
+            "vacine_date": vacine_date,
+            "job": job,
+            "village_id": village_id,
+            "live_with_who": live_with_who,
+            "reason_disability": reason_disability,
+            "year_start_disability": str(year_start_disability),
+            "submit_date": submit_date_str,
+            "score_question": raw_json_to_save,
+            "score_status_live": score_status_live,
+            "child_education_level": child_education_level,
+            "is_educated": is_educated,
+            "education_level": education_level,
+            "have_income": have_income,
+            "primary_job": primary_job,
+            "find_job": find_job,
+            "no_job_reason": no_job_reason,
+            "no_job_reason_other": no_job_reason_other,
+            "no_tvet": no_tvet,
+            "is_tvet": is_tvet,
+            "daily_help": daily_help,
+            "chronic_diseases": chronic_diseases,
+            "disability_getinfor": disability_getinfor,
+            "gazetteer_code": village_id,
+            "created_by": user_id,
+            "disability_photo": disability_photo_b64,
+            "disability_photo_infor": disability_photo_full_b64,
+            "disability_photo_path": national_id_card_b64,
+            "disability_photo_full": equity_card_b64,
+        }
+
+
+        # call insert into DMIS external service
+        dmis_result = await insert_disability_dmis(db_user, dmis_payload)
+
+        logging.error("DMIS FULL RESPONSE: %s", dmis_result)
+
+        if dmis_result.get("error"):
+            await db.rollback()
+
+            message = (dmis_result.get("message") or "").lower()
+
+            if "duplicate" in message:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Duplicate beneficiary in DMIS"
+                )
+
+            raise HTTPException(
+                status_code=502,
+                detail=f"DMIS error: {dmis_result.get('message')}"
+            )
+
+        dmis_disability_code = dmis_result["data"]["disability_code"]
+        # update disability_code
+        registration_data.disability_code = dmis_disability_code
+        db.add(registration_data)
+        await db.flush()
+        
+        main_id = registration_data.id
+        logging.info(f"Created main record with ID: {main_id}")
+
+        # Collect files to upload after DB commit
+        files_to_upload = []
+
+        single_photos = {
+            "disability_photo": (
+                disability_photo,
+                AssetType.DISABILITY_PHOTO,
+            ),
+            "disability_photo_full": (
+                disability_photo_full, 
+                AssetType.DISABILITY_PHOTO_FULL,
+            ),
+        }
+
+        for field_name, (file, asset_type) in single_photos.items():
+            if file:
+                try:
+                    # Read file content
+                    content = await file.read()
+
+                    # Generate path with UUID
+                    unique_id = str(uuid.uuid4())
+                    file_path = f"{main_id}/main/{field_name}_{unique_id}.png"
+
+                    # Store file info for later upload
+                    files_to_upload.append({
+                        "content": content,
+                        "file_path": file_path,
+                        "content_type": file.content_type or "image/png"
+                    })
+
+                    # Create asset record using Pydantic model
+                    asset_data = MainAsset(
+                        main_id=main_id,
+                        attachment=file_path,
+                        type=asset_type,
+                    )
+
+                    db.add(asset_data)
+                    await db.flush()
+
+                except Exception as e:
+                    await db.rollback()
+                    raise e
+
+        # Handle optional related documents
+        if family_book or residence_book or national_id_card or equity_card:
+            related_docs = {
+                "family_book": (family_book, AssetType.FAMILY_BOOK),
+                "residence_book": (residence_book, AssetType.RESIDENCE_BOOK),
+                "national_id_card": (national_id_card, AssetType.NID),
+                "equity_card": (equity_card, AssetType.EQUITY_CARD),
+            }
+
+            for field_name, (file, asset_type) in related_docs.items():
+                if file:   
+                    try:
+                        # Read file content
+                        content = await file.read()
+
+                        # Generate path with UUID
+                        unique_id = str(uuid.uuid4())
+                        file_path = f"{main_id}/main/{field_name}_{unique_id}.png"
+
+                        # Store file info for later upload
+                        files_to_upload.append({
+                            "content": content,
+                            "file_path": file_path,
+                            "content_type": file.content_type or "image/png"
+                        })
+
+                        # Create asset record using Pydantic model
+                        asset_data = MainAsset(
+                            main_id=main_id,
+                            attachment=file_path,
+                            type=asset_type,
+                        )
+
+                        db.add(asset_data)
+                        await db.flush()
+
+                    except Exception as e:
+                        await db.rollback()
+                        raise e
+
+        # --- Handle fingerprints and disability photos ---
+        files_to_upload = files_to_upload if 'files_to_upload' in locals() else []
+
+        if is_disability_fingerprint:
+            # Single disability fingerprint photo
+            if disability_fingerprint_photo:
+                content = await disability_fingerprint_photo.read()
+                unique_id = str(uuid.uuid4())
+                file_path = f"{main_id}/main/disability_fingerprint_{unique_id}.png"
+
+                # Add to files_to_upload for MinIO
+                files_to_upload.append({
+                    "content": content,
+                    "file_path": file_path,
+                    "content_type": disability_fingerprint_photo.content_type or "image/png"
+                })
+
+                # Save to MainAsset table
+                new_asset = MainAsset(
+                    main_id=main_id,
+                    attachment=file_path,
+                    type=AssetType.DISABILITY_DOC,  # Important
+                )
+                db.add(new_asset)
+                await db.flush()
+
+        else:
+            # Multiple fingerprint photos (right and left)
+            fingerprint_photos = {
+                "fp_right_photos": (fp_right_photos, AssetType.FP_RIGHT, fp_right_metadatas),
+                "fp_left_photos": (fp_left_photos, AssetType.FP_LEFT, fp_left_metadatas),
+            }
+
+            for field_name, (files, asset_type, metadata_list) in fingerprint_photos.items():
+                if files:
+                    for index, file in enumerate(files):
+                        content = await file.read()
+                        unique_id = str(uuid.uuid4())
+                        file_path = f"{main_id}/main/{field_name}_{unique_id}.png"
+
+                        # Add to files_to_upload for MinIO
+                        files_to_upload.append({
+                            "content": content,
+                            "file_path": file_path,
+                            "content_type": file.content_type or "image/png"
+                        })
+
+                        # Handle metadata if provided
+                        file_metadata = None
+                        if metadata_list and index < len(metadata_list):
+                            metadata_string = metadata_list[index]
+                            try:
+                                json.loads(metadata_string)
+                                file_metadata = metadata_string
+                            except json.JSONDecodeError:
+                                logging.warning(f"Invalid JSON metadata for {asset_type.name} photo {index}")
+                                file_metadata = metadata_string
+
+                        # Save to MainAsset table
+                        new_asset = MainAsset(
+                            main_id=main_id,
+                            attachment=file_path,
+                            type=asset_type,
+                            remarks=file_metadata,
+                        )
+                        db.add(new_asset)
+                        await db.flush()
+
+        # Handle multiple fingerprint photos
+        # if not is_disability_fingerprint:
+        #     fingerprint_photos = {
+        #         "fp_right_photos": (fp_right_photos, AssetType.FP_RIGHT, fp_right_metadatas),
+        #         "fp_left_photos": (fp_left_photos, AssetType.FP_LEFT, fp_left_metadatas),
+        #     }
+
+        #     # Ensure files_to_upload exists
+        #     files_to_upload = files_to_upload if 'files_to_upload' in locals() else []
+
+
+        #     for field_name, (files, asset_type, metadata_list) in fingerprint_photos.items():
+        #         if files:
+        #             for index, file in enumerate(files):
+        #                 try:
+        #                     content = await file.read()
+        #                     unique_id = str(uuid.uuid4())
+        #                     file_path = f"{main_id}/main/{field_name}_{unique_id}.png"
+
+        #                     # Store file info for later MinIO upload
+        #                     files_to_upload.append({
+        #                         "content": content,
+        #                         "file_path": file_path,
+        #                         "content_type": file.content_type or "image/png"
+        #                     })
+
+        #                     # Handle metadata if provided
+        #                     file_metadata = None
+        #                     if metadata_list and index < len(metadata_list):
+        #                         metadata_string = metadata_list[index]
+        #                         try:
+        #                             json.loads(metadata_string)
+        #                             file_metadata = metadata_string
+        #                         except json.JSONDecodeError:
+        #                             logging.warning(f"Invalid JSON metadata for {asset_type.name} photo {index}")
+        #                             file_metadata = metadata_string
+
+        #                     # Insert into DB
+        #                     new_asset = MainAsset(
+        #                         main_id=main_id,
+        #                         attachment=file_path,
+        #                         type=asset_type,
+        #                         remarks=file_metadata,
+        #                     )
+        #                     db.add(new_asset)
+        #                     await db.flush()
+
+        #                 except Exception as e:
+        #                     await db.rollback()
+        #                     raise e
+                    
+        # else:
+        #     disability_fingerprint_photo
+
+
+
+        # --- Commit DB first so we can count inserted fingerprints ---
+        await db.commit()
+        await db.refresh(registration_data)
+
+        right_count = await db.scalar(
+            select(func.count())
+            .select_from(MainAsset)
+            .where(MainAsset.main_id == main_id)
+            .where(MainAsset.type == AssetType.FP_RIGHT)
+        ) or 0
+
+        left_count = await db.scalar(
+            select(func.count())
+            .select_from(MainAsset)
+            .where(MainAsset.main_id == main_id)
+            .where(MainAsset.type == AssetType.FP_LEFT)
+        ) or 0
+
+        has_enough_fingerprints = (right_count >= 3) and (left_count >= 3)
+
+        # Logging for debugging
+        logging.info(
+            f"Fingerprint counts → right: {right_count}, left: {left_count}, "
+            f"enough: {has_enough_fingerprints}"
+        )
+        if has_enough_fingerprints:
+            logging.info("Fingerprint validation: ✅ both right and left >= 3")
+        else:
+            logging.warning(
+                f"Fingerprint validation: ❌ (right={right_count}, left={left_count})"
+            )
+
+        registration_data.fingerprint = has_enough_fingerprints
+        db.add(registration_data)
+        await db.commit()
+        await db.refresh(registration_data)
+
+        # ── Build the final response dictionary ───────────────────────────────
+        main_read_schema = MainRead.model_validate(registration_data)
+        main_dict = main_read_schema.model_dump(by_alias=True, exclude={"questions_answers"})
+
+        # Add the computed field to the response
+        main_dict["fingerprint"] = has_enough_fingerprints
+
+        # Parse score_question from JSON string to actual list for Pydantic validation
+        try:
+            score_question_list = json.loads(registration_data.score_question) if registration_data.score_question else []
+        except json.JSONDecodeError:
+            score_question_list = []
+
+        # Temporarily set the parsed list on the ORM object so MainRead validates correctly
+        original_score_question = registration_data.score_question
+        registration_data.score_question = score_question_list
+
+        # store score_question in DB 
+        registration_data.score_question = original_score_question
+
+
+        main_dict = main_read_schema.model_dump(
+            by_alias=True,
+            exclude={
+                "disability_photo",
+                "disability_photo_infor",
+                "disability_photo_full",
+                "family_book",
+                "residence_book",
+                "national_id_card",
+                "equity_card",
+                "questions_answers",  # if you also want to hide this
+            },
+            exclude_none=True  # <-- key part to remove fields with value None
+        )
+
+        # photo
+        asset_urls = await attach_asset_urls(db, main_id, keycloak_user.token)
+        # main_dict["disability_photo"] = asset_urls.get("disability_photo")
+        # main_dict["disability_photo_infor"] = asset_urls.get("disability_photo_infor")
+        # main_dict["family_book"] = asset_urls.get("family_book")
+        # main_dict["residence_book"] = asset_urls.get("residence_book")
+        # main_dict["national_id_card"] = asset_urls.get("national_id_card")
+        # main_dict["equity_card"] = asset_urls.get("equity_card")
+
+        # ADD THESE TWO LINES FOR DEBUGGING
+        logging.info("=== attach_asset_urls returned keys ===")
+        logging.info("Keys in asset_urls: %s", list(asset_urls.keys()))
+        logging.info("Full asset_urls content: %s", asset_urls)
+
+        # --- score_question JSON ---
+        # try:
+        #     main_dict["score_question"] = json.loads(registration_data.score_question)
+        # except Exception:
+        #     main_dict["score_question"] = []
+        
+        # Add to DB
+        registration_data.score_question = raw_json_to_save
+        await db.commit()
+        await db.refresh(registration_data)
+
+        # Upload all files to MinIO after DB commit
+        logging.info(f"Starting MinIO upload for {len(files_to_upload)} files")
+        for file_info in files_to_upload:
+            try:
+                if file_info["content"]:
+                    await MinioService.upload_file(
+                        file_content=file_info["content"],
+                        file_name=file_info["file_path"],
+                        content_type=file_info["content_type"],
+                    )
+                logging.info(f"Successfully uploaded to MinIO: {file_info['file_path']}")
+            except Exception as e:
+                logging.error(f"Failed to upload {file_info['file_path']} to MinIO: {e}")
+                # Continue with other uploads even if one fails
+        
+        logging.info("MinIO upload completed")
+
+        saved_count = 0
+        for q in questions:
+            keyname = q["keyname"]
+            answer_code = q["answer_code"]
+            category_code = q.get("category") or q.get("category_code")
+            qa_data = QuestionAnswerCreateInternal(
+                main_id=registration_data.id,
+                question_code=keyname,
+                category_code=category_code,
+                answer_code=answer_code
+            )
+            await crud_question_answer.create_question_answer(db=db, qa_data=qa_data)
+            saved_count += 1
+
+        logging.info(f"Inserted {saved_count} score answers into question_answer table")
+        
+        return {
+            "error": False,
+            "message": "success",
+            "data": main_dict
+        }
+        
+    except Exception as e:
+        # Rollback on any error
+        await db.rollback()
+        
+        # Log the error for debugging
+        error_message = str(e)
+        logging.error(f"Error in create_member: {error_message}", exc_info=True)
+
+        # Check if it's an HTTPException and re-raise it
+        if isinstance(e, HTTPException):
+            raise
+        
+        # Check if it's a validation error and handle it gracefully
+        if "validation error" in error_message.lower() and "FmAccountMain" in error_message:
+            # This is a Pydantic validation error, provide user-friendly message
+            if "String should have at least" in error_message:
+                # Generic string length error
+                raise HTTPException(
+                    status_code=HTTPStatus.BAD_REQUEST, detail="សូមពិនិត្យបំពេញទិន្នន័យរបស់អ្នកឡើងវិញ ហើយព្យាយាមម្តងទៀត។"
+                )
+            else:
+                # Generic validation error
+                raise HTTPException(
+                    status_code=HTTPStatus.BAD_REQUEST, detail="សូមពិនិត្យបំពេញទិន្នន័យរបស់អ្នកឡើងវិញ ហើយព្យាយាមម្តងទៀត។"
+                )
+        else:
+            # Other types of errors
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail=(
+                    "មានបញ្ហាបច្ចេកទេស សូមទាក់ទងជំនួយ។"
+                    if settings.ENVIRONMENT == "production"
+                    else f"Error creating main account: {error_message}"
+                ),
+            )
+
+======================================= X ================================================
+
+
+
+
+======================================= GET ALL MAIN RECORD =======================================
+# @router.get(
+#     "/",
+#     response_model=MainRecordListResponse,
+#     summary="Get all main records",
+#     description="Retrieve all active main records with optional filtering"
+# )
+# async def get_main_records(
+#     keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+#     db: Annotated[AsyncSession, Depends(async_get_db)],
+#     skip: int = 0,
+#     limit: int = 100,
+#     status_filter: AccountStatus | None = None,
+#     gazetteer_code: str | None = None,
+# ):
+#     # Validate user
+#     await validate_user(keycloak_user.username, keycloak_user, db)
+    
+#     try:
+#         if status_filter:
+#             records = await crud_main.get_by_status(db=db, status=status_filter, skip=skip, limit=limit)
+#         elif gazetteer_code:
+#             records = await crud_main.get_by_gazetteer_code(db=db, gazetteer_code=gazetteer_code, skip=skip, limit=limit)
+#         else:
+#             records = await crud_main.get_all_active(db=db, skip=skip, limit=limit)
+        
+#         result = []
+#         for record in records:
+#             # Attach asset URLs
+#             asset_urls = await attach_asset_urls(db, record.id, keycloak_user.token)
+
+#             record_dict = MainReadList(
+#                 id=record.id,
+#                 phone_number=record.phone_number,
+#                 gender=record.gender,
+#                 dob=record.dob,
+#                 eq_card=record.eq_card,
+#                 disability_date=record.disability_date,
+#                 gazetteer_code=record.gazetteer_code,
+#                 status=record.status,
+#                 notes=record.notes,
+#                 spid=record.spid,
+#                 latitude=record.latitude,
+#                 longitude=record.longitude,
+#                 remarks=record.remarks,
+#                 created_by=record.created_by,
+#                 updated_by=record.updated_by,
+#                 disability_code=record.disability_code,
+#                 family_name=record.family_name,
+#                 given_name=record.given_name,
+#                 family_name_en=record.family_name_en,
+#                 given_name_en=record.given_name_en,
+#                 disability_photo=asset_urls.get("disability_photo"),
+#                 disability_photo_infor=asset_urls.get("disability_photo_infor"),
+#                 idpoor_status=record.idpoor_status,
+#                 vacine_status=record.vacine_status,
+#                 vacine_date=record.vacine_date,
+#                 live_with_who=record.live_with_who,
+#                 reason_disability=record.reason_disability,
+#                 year_start_disability=record.year_start_disability,
+#                 submit_date=record.submit_date,
+#                 child_education_level=record.child_education_level,
+#                 is_educated=record.is_educated,
+#                 education_level=record.education_level,
+#                 have_income=record.have_income,
+#                 primary_job=record.primary_job,
+#                 find_job=record.find_job,
+#                 no_job_reason=record.no_job_reason,
+#                 no_job_reason_other=record.no_job_reason_other,
+#                 no_tvet=record.no_tvet_reason,
+#                 is_tvet=record.is_tvet,
+#                 daily_help=record.daily_help,
+#                 chronic_diseases=record.chronic_diseases,
+#                 score_status_live=record.score_status_live,
+#                 fingerprint=record.fingerprint,
+#             )
+
+#             result.append(record_dict)
+    
+#         return {
+#             "error": False,
+#             "message": "Successful fetching main records",
+#             "data": result
+#         }
+        
+#     except Exception as e:
+#         return {
+#             "error": True,
+#             "message": f"Failed to fetch main records: {str(e)}",
+#             "data": []
+#         }
+
+============================ X =====================================
+
+
+
+===================== CRUD filter_status =====================
+# Filter status
+    async def filter_status(self, db: AsyncSession, *, status: AccountStatus, skip: int = 0, limit: int = 100) -> List[Main]:
+        """
+        Filter Main records by status only
+        """
+        stmt = (
+            select(Main)
+            .where(
+                Main.is_deleted == False,
+                Main.status == status,
+            )
+            .order_by(Main.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
+================================================================================================
+
+
+# Filter-status 
+@router.get(
+    "/status_filter",
+    response_model=MainRecordListResponse,
+    summary="Get all main records",
+    description="Retrieve all active main records with optional filtering by status",
+)
+async def get_main_records(
+    keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+    skip: int = 0,
+    limit: int = 100,
+    status_filter: Optional[str] = None,
+):
+    # Validate user
+    await validate_user(keycloak_user.username, keycloak_user, db)
+
+    # Map query string to AccountStatus enum
+    status_enum: Optional[AccountStatus] = None
+    if status_filter:
+        try:
+            status_enum = AccountStatus(status_filter)
+        except KeyError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status '{status_filter}'"
+            )
+
+    if status_enum:
+        records = await crud_main.filter_status(db=db, status=status_enum, skip=skip, limit=limit)
+    else:
+        records = await crud_main.get_all_active(db=db, skip=skip, limit=limit)
+
+    result = []
+    for record in records:
+        asset_urls = await attach_asset_urls(db, record.id, keycloak_user.token)
+        result.append(
+            MainReadList(
+                id=record.id,
+                phone_number=record.phone_number,
+                gender=record.gender,
+                dob=record.dob,
+                eq_card=record.eq_card,
+                disability_date=record.disability_date,
+                gazetteer_code=record.gazetteer_code,
+                status=record.status,
+                notes=record.notes,
+                spid=record.spid,
+                latitude=record.latitude,
+                longitude=record.longitude,
+                remarks=record.remarks,
+                created_by=record.created_by,
+                updated_by=record.updated_by,
+                disability_code=record.disability_code,
+                family_name=record.family_name,
+                given_name=record.given_name,
+                family_name_en=record.family_name_en,
+                given_name_en=record.given_name_en,
+                disability_photo=asset_urls.get("disability_photo"),
+                disability_photo_infor=asset_urls.get("disability_photo_infor"),
+                idpoor_status=record.idpoor_status,
+                vacine_status=record.vacine_status,
+                vacine_date=record.vacine_date,
+                live_with_who=record.live_with_who,
+                reason_disability=record.reason_disability,
+                year_start_disability=record.year_start_disability,
+                submit_date=record.submit_date,
+                child_education_level=record.child_education_level,
+                is_educated=record.is_educated,
+                education_level=record.education_level,
+                have_income=record.have_income,
+                primary_job=record.primary_job,
+                find_job=record.find_job,
+                no_job_reason=record.no_job_reason,
+                no_job_reason_other=record.no_job_reason_other,
+                no_tvet=record.no_tvet_reason,
+                is_tvet=record.is_tvet,
+                daily_help=record.daily_help,
+                chronic_diseases=record.chronic_diseases,
+                score_status_live=record.score_status_live,
+                fingerprint=record.fingerprint,
+            )
+        )
+
+    return {
+        "error": False,
+        "message": "Successful fetching main records",
+        "data": result
+    }
+
+
+
+
+========================
+# @router.get(
+#     "/status_filter",
+#     response_model=MainRecordListResponse,
+#     summary="Get all main records",
+#     description="Retrieve all active main records with optional filtering by status",
+# )
+# async def get_main_records(
+#     keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+#     db: Annotated[AsyncSession, Depends(async_get_db)],
+#     skip: int = 0,
+#     limit: int = 100,
+#     status_filter: Optional[str] = None,
+# ):
+#     # Validate user
+#     await validate_user(keycloak_user.username, keycloak_user, db)
+
+#     # Map query string to AccountStatus enum
+#     status_enum: Optional[AccountStatus] = None
+#     if status_filter:
+#         try:
+#             status_enum = AccountStatus(status_filter)
+#         except KeyError:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail=f"Invalid status '{status_filter}'"
+#             )
+
+#     if status_enum:
+#         records = await crud_main.filter_status(db=db, status=status_enum, skip=skip, limit=limit)
+#     else:
+#         records = await crud_main.get_all_active(db=db, skip=skip, limit=limit)
+
+#     result = []
+#     for record in records:
+#         asset_urls = await attach_asset_urls(db, record.id, keycloak_user.token)
+#         result.append(
+#             MainReadList(
+#                 id=record.id,
+#                 phone_number=record.phone_number,
+#                 gender=record.gender,
+#                 dob=record.dob,
+#                 eq_card=record.eq_card,
+#                 disability_date=record.disability_date,
+#                 gazetteer_code=record.gazetteer_code,
+#                 status=record.status,
+#                 notes=record.notes,
+#                 spid=record.spid,
+#                 latitude=record.latitude,
+#                 longitude=record.longitude,
+#                 remarks=record.remarks,
+#                 created_by=record.created_by,
+#                 updated_by=record.updated_by,
+#                 disability_code=record.disability_code,
+#                 family_name=record.family_name,
+#                 given_name=record.given_name,
+#                 family_name_en=record.family_name_en,
+#                 given_name_en=record.given_name_en,
+#                 disability_photo=asset_urls.get("disability_photo"),
+#                 disability_photo_infor=asset_urls.get("disability_photo_infor"),
+#                 idpoor_status=record.idpoor_status,
+#                 vacine_status=record.vacine_status,
+#                 vacine_date=record.vacine_date,
+#                 live_with_who=record.live_with_who,
+#                 reason_disability=record.reason_disability,
+#                 year_start_disability=record.year_start_disability,
+#                 submit_date=record.submit_date,
+#                 child_education_level=record.child_education_level,
+#                 is_educated=record.is_educated,
+#                 education_level=record.education_level,
+#                 have_income=record.have_income,
+#                 primary_job=record.primary_job,
+#                 find_job=record.find_job,
+#                 no_job_reason=record.no_job_reason,
+#                 no_job_reason_other=record.no_job_reason_other,
+#                 no_tvet=record.no_tvet_reason,
+#                 is_tvet=record.is_tvet,
+#                 daily_help=record.daily_help,
+#                 chronic_diseases=record.chronic_diseases,
+#                 score_status_live=record.score_status_live,
+#                 fingerprint=record.fingerprint,
+#             )
+#         )
+
+#     return {
+#         "error": False,
+#         "message": "Successful fetching main records",
+#         "data": result
+#     }
+
+
+
+================================== X =======================================
+
+
+
+@router.post(
+    "/complaints",
+    summary="Create Complaint",
+    description="Create a new complaint record",
+    response_model=None  # <--- Fix for FastAPIError
+)
+async def create_complaint(
+    complaint: ComplaintCreate,
+    keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+    db: Annotated[AsyncSession, Depends(async_get_db)]
+):
+    try:
+        logging.info("Authenticated user: %s", keycloak_user.username)
+
+        # --- Get user info ---
+        db_user = await validate_user(keycloak_user.username, keycloak_user, db)
+        user_id = db_user["id"]
+
+        # --- Disability Card Validation ---
+        if complaint.is_disability:
+            if not complaint.disability_card:
+                return {"error": True, "message": "disability_card is required when is_disability is True"}
+
+            # Keep as string and preserve leading zeros
+            complaint.disability_card = str(complaint.disability_card)
+
+            if len(complaint.disability_card) > 100:
+                return {"error": True, "message": "disability_card must be at most 100 characters"}
+
+            # Check duplicate complaint
+            stmt = select(ComplaintTable).where(
+                ComplaintTable.disability_card == complaint.disability_card,
+                ComplaintTable.is_disability == True,
+                ComplaintTable.is_deleted == False
+            )
+            result = await db.execute(stmt)
+            existing_complaint = result.scalar_one_or_none()
+            if existing_complaint:
+                return {"error": True, "message": f"disability_card '{complaint.disability_card}' already exists in complaints"}
+
+            # Check if exists in main table
+            stmt = select(Main).where(Main.disability_code == complaint.disability_card)
+            result = await db.execute(stmt)
+            main_record = result.scalar_one_or_none()
+            if not main_record:
+                return {"error": True, "message": f"disability_card '{complaint.disability_card}' does not exist in the main database"}
+
+        # --- Complaint Type Validation ---
+        if complaint.complaint_type_id is not None:
+            stmt = select(ComplaintTypeTable).where(
+                ComplaintTypeTable.id == complaint.complaint_type_id,
+                ComplaintTypeTable.is_deleted == False
+            )
+            result = await db.execute(stmt)
+            complaint_type = result.scalar_one_or_none()
+            if not complaint_type:
+                return {"error": True, "message": "Invalid complaint_type_id"}
+
+        # --- Create Complaint ---
+        complaint_internal = complaint.model_copy(
+            update={
+                "created_by": user_id,
+                "updated_by": user_id,
+                "submitted_at": complaint.submitted_at or datetime.utcnow()
+            }
+        )
+
+        created = await crud_complaint.create_complaint(
+            db=db,
+            complaint_data=complaint_internal
+        )
+
+        await db.commit()
+        await db.refresh(created)
+
+        return {
+            "error": False,
+            "message": "Complaint created successfully",
+            "data": {
+                "id": created.id,
+                "disability_card": created.disability_card,
+                "complaint_type_id": created.complaint_type_id
+            }
+        }
+
+    except Exception as e:
+        await db.rollback()
+        logging.error("Error creating complaint: %s", str(e))
+        return {"error": True, "message": "Internal server error"}
