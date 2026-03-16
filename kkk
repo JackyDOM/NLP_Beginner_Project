@@ -1,0 +1,290 @@
+import logging
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
+from datetime import datetime
+from sqlalchemy import select
+
+from ...api.auth_keycloak import get_user_info
+from ...core.db.database import async_get_db
+from ...core.utils.user_validation import validate_user
+from ...schemas.user_keycloak import UserInSignInKeyCloak
+from ...schemas.complaint_type import ComplaintTypeCreateInternal
+from ...crud.crud_complaint_type import crud_complaint_type
+from ...models.main import Main
+
+from ...schemas.complaint import ComplaintCreate, ComplaintCreateInternal
+from ...models.complaint_type import ComplaintTypeTable
+from ...models.complaint import ComplaintTable
+from ...crud.crud_complaint import crud_complaint
+# from ...crud.complaint import crud_complaint
+
+router = APIRouter(tags=["complaint-fraud-view"], prefix="/complaint-fraud-view")
+
+# Complaint and Fraud Type
+@router.post(
+    "/complaint_type",
+    summary="Seed database with complaint and fraud types",
+    description="This endpoint inserts all types of complaints and frauds if they do not already exist.",
+)
+async def complaint_fraud_type(
+    keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+    db: Annotated[AsyncSession, Depends(async_get_db)]
+) -> dict:
+    """
+    Seed the database with predefined complaint and fraud types.
+
+    Args:
+        keycloak_user: Authenticated user information
+        db: Database session
+
+    Returns:
+        Summary of seeding operation
+    """
+
+    logging.info("Authenticated keycloak_user: %s", keycloak_user)
+
+    # Validate user
+    db_user = await validate_user(keycloak_user.username, keycloak_user, db)
+    user_id = db_user["id"]
+
+    COMPLAINTS_FRAUD_TYPES = [
+        # COMPLAINT TYPES
+        {"title": "ប័ណ្ណរកឃើញវិញ", "type": "COMPLAINT"},
+        {"title": "បាត់ ឬខូចប័ណ្ណ", "type": "COMPLAINT"},
+        {"title": "ជនមានពិការភាពបានស្លាប់", "type": "COMPLAINT"},
+        {"title": "ធើ្វបច្ចុប្បន្នភាពពិការភាព", "type": "COMPLAINT"},
+        {"title": "ពិការភាពជាសះស្បើយឡើងវិញ", "type": "COMPLAINT"},
+        {"title": "ឈ្មោះមិនត្រឹមត្រូវ", "type": "COMPLAINT"},
+        {"title": "ភេទមិនត្រឹមត្រូវ", "type": "COMPLAINT"},
+        {"title": "ថ្ងៃខែឆ្នាំកំណើតមិនត្រឹមត្រូវ", "type": "COMPLAINT"},
+        {"title": "កែតម្រូវអាស័យដ្ឋាន", "type": "COMPLAINT"},
+        {"title": "រូបថតលើប័ណ្ណមិនត្រឹមត្រូវ", "type": "COMPLAINT"},
+
+        # FRAUD TYPES
+        {"title": "ប្រើប្រាស់ឯកសាររបស់អ្នកដទៃ", "type": "FRAUD"},
+        {"title": "ចុះឈ្មោះលើសពីរដង", "type": "FRAUD"},
+        {"title": "ផ្តល់ព័ត៏មានមិនត្រឹមត្រូវ", "type": "FRAUD"}
+    ]
+
+    inserted_count = 0
+    skipped_count = 0
+    failed_items = []
+
+    for item in COMPLAINTS_FRAUD_TYPES:
+        try:
+            async with db.begin_nested():
+                exists = await crud_complaint_type.check_duplicate_title(db, title=item["title"])
+                if exists:
+                    skipped_count += 1
+                    continue
+
+                create_data = ComplaintTypeCreateInternal(
+                    title=item["title"],
+                    type=item["type"],
+                    created_by=user_id,
+                    updated_by=user_id,
+                    submitted_at=datetime.utcnow()
+                )
+                await crud_complaint_type.create(db=db, object=create_data)
+                inserted_count += 1
+
+        except Exception as e:
+            await db.rollback()
+            failed_items.append({
+                "title": item.get("title"),
+                "type": item.get("type"),
+                "error": str(e)
+            })
+
+    total_in_db = len(await crud_complaint_type.get_all_active(db=db, limit=1000))
+
+    return {
+        "message": "Complaint and fraud types seeding completed",
+        "summary": {
+            "total_processed": len(COMPLAINTS_FRAUD_TYPES),
+            "inserted": inserted_count,
+            "skipped": skipped_count,
+            "failed": len(failed_items),
+            "total_in_database": total_in_db
+        },
+        "failed_items": failed_items,
+        "status": "success" if len(failed_items) == 0 else "partial_success"
+    }
+
+
+
+============================
+==================================
+=========================================
+
+
+@router.post(
+    "/complaints",
+    summary="Create Complaint",
+    response_model=None
+)
+async def create_complaint(
+    complaint: ComplaintCreate,
+    keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+    db: Annotated[AsyncSession, Depends(async_get_db)]
+):
+    try:
+        logging.info("Authenticated user: %s", keycloak_user.username)
+
+        db_user = await validate_user(keycloak_user.username, keycloak_user, db)
+        user_id = db_user["id"]
+
+        disability_name = None
+
+        if complaint.is_disability:
+            if not complaint.disability_card:
+                return {"error": True, "message": "disability_card is required when is_disability is True"}
+
+            complaint.disability_card = str(complaint.disability_card)
+            if len(complaint.disability_card) > 100:
+                return {"error": True, "message": "លេខបណ្ណ័ពិការភាពមិនត្រឹមត្រូវ!"}
+
+            # Check duplicate complaint
+            stmt = select(ComplaintTable).where(
+                ComplaintTable.disability_card == complaint.disability_card,
+                ComplaintTable.is_disability == True,
+                ComplaintTable.is_deleted == False
+            )
+            result = await db.execute(stmt)
+            existing_complaint = result.scalar_one_or_none()
+            if existing_complaint:
+                return {"error": True, "message": f"លេខបណ្ណ័ពិការភាព '{complaint.disability_card}' មានរួចហើយ!"}
+
+            # Check if exists in Main table and get disability_name
+            stmt = select(Main).where(Main.disability_code == complaint.disability_card)
+            result = await db.execute(stmt)
+            main_record = result.scalar_one_or_none()
+            if not main_record:
+                return {"error": True, "message": f"លេខបណ្ណ័ពិការភាព '{complaint.disability_card}' មិនមានក្នុងទិន្នន័យ!"}
+
+            # Combine family_name + given_name
+            disability_name = " ".join(filter(None, [main_record.family_name, main_record.given_name]))
+
+        # --- Complaint Type Validation ---
+        if complaint.complaint_type_id is not None:
+            stmt = select(ComplaintTypeTable).where(
+                ComplaintTypeTable.id == complaint.complaint_type_id,
+                ComplaintTypeTable.is_deleted == False
+            )
+            result = await db.execute(stmt)
+            complaint_type = result.scalar_one_or_none()
+            if not complaint_type:
+                return {"error": True, "message": "លេខសម្គាល់ ប្រភេទបណ្តឹងតវ៉ា ឬប្រភេទក្លែងបន្លំមិនត្រឹមត្រូវ!"}
+
+        # --- Create Complaint ---
+        complaint_internal = complaint.model_copy(
+            update={
+                "created_by": user_id,
+                "updated_by": user_id,
+                "submitted_at": complaint.submitted_at or datetime.utcnow(),
+                "disability_name": disability_name
+            }
+        )
+
+        created = await crud_complaint.create_complaint(
+            db=db,
+            complaint_data=complaint_internal
+        )
+
+        await db.commit()
+        await db.refresh(created)
+
+        response_data = {
+            "id": created.id,
+            "disability_card": created.disability_card,
+            "disability_name": disability_name,
+            "case_type": created.case_type,
+            "complainant_name": created.complainant_name,
+            "complainant_relation": created.complainant_relation,
+            "receiver_name": created.receiver_name,
+            "receiver_position": created.receiver_position,
+            "complaint_type_id": created.complaint_type_id,
+            "is_disability": created.is_disability
+        }
+
+        return {
+            "error": False,
+            "message": "Complaint created successfully",
+            "data": response_data
+        }
+
+    except Exception as e:
+        await db.rollback()
+        logging.error("Error creating complaint: %s", str(e))
+        return {"error": True, "message": "Internal server error"}
+
+
+
+================
+=====================
+=========================
+
+class AccountStatus(str, Enum):
+    CA_REMOVED = "CA_R"
+    CA_DRAFT = "CA_D"
+    CC_PENDING = "CC_P"
+    CC_APPROVED = "CC_A"
+    CC_REJECTED = "CC_R"
+    SPR_PENDING = "SPR_P"
+    SPR_APPROVED = "SPR_A"
+    SPR_REJECTED = "SPR_R"
+    PWD_PENDING = "PWD_P"
+    PWD_APPROVED = "PWD_A"
+    PWD_REJECTED = "PWD_R"
+    PWD_MODIFIED = "PWD_M"
+
+
+================
+===================
+=====================
+
+"""update accountstatus enum to full words
+
+Revision ID: f6be9610c52e
+Revises: 7e8ec95b75d5
+Create Date: 2026-03-16 04:11:12
+"""
+from alembic import op
+
+# revision identifiers
+revision = 'f6be9610c52e'
+down_revision = '7e8ec95b75d5'
+branch_labels = None
+depends_on = None
+
+def upgrade() -> None:
+    # Step 1: create a new enum type with full words
+    op.execute("""
+        CREATE TYPE accountstatus_new AS ENUM (
+            'CA_REMOVED', 'CA_DRAFT',
+            'CC_PENDING', 'CC_APPROVED', 'CC_REJECTED',
+            'SPR_PENDING', 'SPR_APPROVED', 'SPR_REJECTED',
+            'PWD_PENDING', 'PWD_APPROVED', 'PWD_MODIFIED', 'PWD_REINTERVIEWD'
+        )
+    """)
+
+    # Step 2: alter column to use the new enum type
+    # casting via text ensures old short codes stay temporarily
+    op.execute("""
+        ALTER TABLE main
+        ALTER COLUMN status
+        TYPE accountstatus_new
+        USING status::text::accountstatus_new
+    """)
+
+    # Step 3: drop old enum type
+    op.execute("DROP TYPE accountstatus")
+
+    # Step 4: rename new enum to old name
+    op.execute("ALTER TYPE accountstatus_new RENAME TO accountstatus")
+
+
+def downgrade() -> None:
+    # optional: leave empty if you don't plan to revert
+    pass
