@@ -1,0 +1,234 @@
+import * as z from 'zod';
+
+import { MESSAGES } from '@/lib/constants';
+import { isValid, parse } from 'date-fns';
+
+const validateDate = (errorMessage: string) => {
+  return z.string().refine(
+    val => {
+      if (!val) return false;
+      
+      // Only accept exact format dd/MM/yyyy
+      const date = parse(val, 'dd/MM/yyyy', new Date());
+      if (!isValid(date)) {
+        return false;
+      }
+      
+      // Check if the date is reasonable (not in the future, not too old)
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const minDate = new Date(currentYear - 120, 0, 1);
+      const maxDate = now;
+      
+      return date <= maxDate && date >= minDate;
+    },
+    {
+      message: errorMessage,
+    },
+  );
+};
+
+export const memberSchema = z
+  .object({
+    spid: z.string().optional(),
+    equity_card_number: z.string().min(10, { message: 'សូមបំពេញលេខបណ្ណសមធម៌អោយបានត្រឹមត្រូវ' }),
+    head_of_household: z.string(),
+    member_selected: z.string().min(1, { message: 'សូមជ្រើសរើសឈ្មោះម្ចាស់គណនី' }),
+    national_id: z
+      .string()
+      .min(9, { message: 'សូមបញ្ចូលលេខអត្តសញ្ញាណបណ្ណ ៩ ឬ ១០ខ្ទង់' })
+      .max(10, { message: 'សូមបញ្ចូលលេខអត្តសញ្ញាណបណ្ណ ៩ ឬ ១០ខ្ទង់' })
+      .refine(value => !value || /^\d{9,10}$/.test(value), {
+        message: 'សូមបញ្ចូលលេខអត្តសញ្ញាណបណ្ណជាលេខចំនួន ៩ ឬ ១០ខ្ទង់ប៉ុណ្ណោះ',
+      }),
+
+    phone_number: z
+      .string()
+      .refine(value => !value || /^(0[1-9])[0-9]{7,8}$/.test(value), {
+        message: 'សូមបញ្ចូលលេខទូរសព្ទ ចាប់ផ្តើមដោយលេខ ០ និងមាន ៩ ឬ ១០ខ្ទង់',
+      })
+      .optional()
+      .nullable(),
+
+    dob: z.string().min(1, { message: 'សូមបំពេញថ្ងៃខែឆ្នាំកំណើត' })
+    .pipe(validateDate('ថ្ងៃខែឆ្នាំកំណើតមិនត្រឹមត្រូវ។ សូមបំពេញតាមគម្រូ ថ្ងៃ/ខែ/ឆ្នាំ (ឧទាហរណ៍: 15/03/1990)')),
+    gender: z.string().min(1, { message: 'សូមជ្រើសរើសឈ្មោះម្ចាស់គណនី' }),
+    status: z.string().min(1, { message: 'សូមជ្រើសរើសឈ្មោះម្ចាស់គណនី' }),
+    
+    name_en: z
+      .string()
+      .optional()
+      .refine(
+        value => {
+          if (!value) return true;
+          return value.length >= 3 && /^[A-Z\s]+$/.test(value);
+        },
+        {
+          message: 'ឈ្មោះជាអក្សរឡាតាំងត្រូវតែមានយ៉ាងហោចណាស់ ៣អក្សរ និងជាអក្សរអង់គ្លេសប៉ុណ្ណោះ (A-Z, space)',
+        }
+      ),
+    account_holder_photo: z.string().min(1, 'សូមថតរូបម្ចាស់គណនី').url('Invalid photo URL'), // Assuming you're storing the photo as a URL
+
+    equity_card_photo: z.string().min(1, 'សូមថតរូបបណ្ណសមធម៌').url('Invalid photo URL'), // Assuming you're storing the photo as a URL
+
+    nid_photo: z.string().min(1, 'សូមថតរូបអត្តសញ្ញាណបណ្ណ').url('Invalid photo URL'), // Assuming you're storing the photo as a URL
+
+    fingerprints: z.string().optional(),
+
+    is_disability_fingerprint: z.boolean().optional(),
+    disability_fingerprint_photo: z.string().optional(),
+    is_not_nid: z.boolean().optional(),
+
+    fingerprints1: z
+      .array(
+        z.object({
+          data: z.object({
+            BMPBase64: z.string().optional(),
+            ISOTemplateBase64: z.string().optional(),
+          }),
+        }),
+      )
+      .optional(),
+  })
+  .refine(
+    data => {
+      if (data.is_disability_fingerprint) {
+        return !!data.disability_fingerprint_photo;
+      }
+      return !!data.fingerprints;
+    },
+    {
+      message: 'សូមថតរូបភាពបញ្ជាក់ពីពិការភាព',
+      path: ['disability_fingerprint_photo'],
+    },
+  )
+  .refine(
+    data => {
+      if (!data.is_disability_fingerprint) {
+        return !!data.fingerprints;
+      }
+      return true;
+    },
+    {
+      message: MESSAGES.FINGERPRINT_GUIDELINE,
+      path: ['fingerprints'],
+    },
+  );
+  // Removed name_en requirement refinement
+
+export type MemberFormValues = z.infer<typeof memberSchema>;
+
+
+=====================
+========================
+=============================
+=================================
+
+import * as z from 'zod';
+
+export const memberSchema = z
+  .object({
+    spid: z.string().optional(),
+
+    equity_card_number: z
+      .string()
+      .min(10, { message: 'សូមបំពេញលេខបណ្ណសមធម៌អោយបានត្រឹមត្រូវ' }),
+
+    head_of_household: z.string(),
+
+    member_selected: z
+      .string()
+      .min(1, { message: 'សូមជ្រើសរើសឈ្មោះម្ចាស់គណនី' }),
+
+    // National ID
+    national_id: z
+      .string()
+      .regex(/^\d+$/, {
+        message: 'សូមបញ្ចូលលេខអត្តសញ្ញាណបណ្ណជាលេខប៉ុណ្ណោះ',
+      }),
+
+    phone_number: z
+      .string()
+      .refine(value => !value || /^(0[1-9])[0-9]{7,8}$/.test(value), {
+        message: 'សូមបញ្ចូលលេខទូរសព្ទ ចាប់ផ្តើមដោយលេខ ០ និងមាន ៩ ឬ ១០ខ្ទង់',
+      })
+      .optional()
+      .nullable(),
+
+    dob: z.string().min(1, { message: 'សូមបំពេញថ្ងៃខែឆ្នាំកំណើត' }),
+
+    gender: z
+      .string()
+      .min(1, { message: 'សូមជ្រើសរើសភេទ' }),
+
+    status: z
+      .string()
+      .min(1, { message: 'សូមជ្រើសរើសស្ថានភាព' }),
+
+    name_en: z
+      .string()
+      .optional()
+      .refine(
+        value => {
+          if (!value) return true;
+          return value.length >= 3 && /^[A-Z\s]+$/.test(value);
+        },
+        {
+          message:
+            'ឈ្មោះជាអក្សរឡាតាំងត្រូវតែមានយ៉ាងហោចណាស់ ៣អក្សរ និងជាអក្សរអង់គ្លេសប៉ុណ្ណោះ (A-Z, space)',
+        },
+      ),
+
+    account_holder_photo: z
+      .string()
+      .min(1, 'សូមថតរូបម្ចាស់គណនី')
+      .url('Invalid photo URL'),
+
+    equity_card_photo: z
+      .string()
+      .min(1, 'សូមថតរូបបណ្ណសមធម៌')
+      .url('Invalid photo URL'),
+
+    // NID photo (important for validation)
+    nid_photo: z
+      .string()
+      .url('Invalid photo URL')
+      .optional()
+      .nullable(),
+
+    fingerprints: z.string().optional(),
+
+    is_disability_fingerprint: z.boolean().optional(),
+
+    disability_fingerprint_photo: z.string().optional(),
+
+    is_not_nid: z.boolean().optional(),
+  })
+
+  // ⭐ Conditional validation for NID
+  .superRefine((data, ctx) => {
+    const nid = data.national_id;
+    const hasPhoto = !!data.nid_photo;
+
+    if (hasPhoto) {
+      // If NID photo exists → must be 9 digits
+      if (!/^\d{9}$/.test(nid)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['national_id'],
+          message: 'បើមានរូបអត្តសញ្ញាណបណ្ណ សូមបញ្ចូលលេខ ៩ ខ្ទង់',
+        });
+      }
+    } else {
+      // If no NID photo → must be 10 digits
+      if (!/^\d{10}$/.test(nid)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['national_id'],
+          message: 'បើគ្មានរូបអត្តសញ្ញាណបណ្ណ សូមបញ្ចូលលេខ ១០ ខ្ទង់',
+        });
+      }
+    }
+  });
+
+export type MemberFormValues = z.infer<typeof memberSchema>;
