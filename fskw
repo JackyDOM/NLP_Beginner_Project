@@ -1,0 +1,120 @@
+=============== user.py ==========================
+# @router.get("/user/me/", response_model=UserRead)
+# async def read_users_me(request: Request, current_user: Annotated[UserRead, Depends(get_current_user)]) -> UserRead:
+#     return current_user
+
+
+=============================
+
+# @router.get("/user/{username}", response_model=UserRead)
+# async def read_user(
+#         request: Request, 
+#         username: str,
+#         keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+#         db: Annotated[AsyncSession, Depends(async_get_db)]
+#     ) -> dict:
+
+#     logging.info(f"User: {keycloak_user.username}")
+
+#     db_user: UserRead | None = await crud_users.get(
+#         db=db, schema_to_select=UserRead, username=username, is_deleted=False
+#     )
+#     if db_user is None:
+#         raise NotFoundException("User not found")
+
+#     return db_user
+
+===============================
+
+# @router.patch("/user/{username}")
+# async def patch_user(
+#     request: Request,
+#     values: UserUpdate,
+#     username: str,
+#     current_user: Annotated[UserRead, Depends(get_current_user)],
+#     keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+#     db: Annotated[AsyncSession, Depends(async_get_db)],
+# ) -> dict[str, str]:
+#     db_user = await crud_users.get(db=db, schema_to_select=UserRead, username=username)
+#     if db_user is None:
+#         raise NotFoundException("User not found")
+
+#     if db_user["username"] != current_user["username"]:
+#         raise ForbiddenException()
+
+#     if values.username != db_user["username"]:
+#         existing_username = await crud_users.exists(db=db, username=values.username)
+#         if existing_username:
+#             raise DuplicateValueException("Username not available")
+
+#     if values.email != db_user["email"]:
+#         existing_email = await crud_users.exists(db=db, email=values.email)
+#         if existing_email:
+#             raise DuplicateValueException("Email is already registered")
+
+#     await crud_users.update(db=db, object=values, username=username)
+#     return {"message": "User updated"}
+
+===================================
+
+# @router.get(
+#     "/villages",
+#     response_model=LocationResponse,
+#     summary="Get villages from DMIS",
+#     description="Retrieve village information from DMIS API service"
+# )
+# async def get_villages(
+#     query: str | None = None,
+#     limit: int = 100,
+#     keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)] = None,
+#     db: Annotated[AsyncSession, Depends(async_get_db)] = None
+# ) -> LocationResponse:
+#     """
+#     Get villages data from DMIS API.
+    
+#     Args:
+#         query: Search query for village names (English or Khmer)
+#         limit: Maximum number of results to return
+#         keycloak_user: Authenticated user information
+#         db: Database session
+        
+#     Returns:
+#         Village data from DMIS API
+#     """
+
+#     logging.info("keycloak_user", keycloak_user)
+    
+#     # Validate user if authentication is required
+#     if keycloak_user:
+#         await validate_user(keycloak_user.username, keycloak_user, db)
+    
+#     try:
+#         # Prepare location parameters
+#         location_params = {
+#             "query": query,
+#             "limit": limit
+#         }
+        
+#         # Remove None values
+#         location_params = {k: v for k, v in location_params.items() if v is not None}
+        
+#         # Call DMIS service
+#         dmis_response = await get_location_data(location_params)
+        
+#         # Transform response to our schema
+#         return LocationResponse(
+#             success=dmis_response.get("success", True),
+#             data=dmis_response.get("data", []),
+#             message=dmis_response.get("message", "Village data retrieved successfully"),
+#             total=dmis_response.get("total", len(dmis_response.get("data", []))),
+#             error=dmis_response.get("error"),
+#             user_info=dmis_response.get("user_info")
+#         )
+        
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to retrieve village data: {str(e)}"
+#         )
