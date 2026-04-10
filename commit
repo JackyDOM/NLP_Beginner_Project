@@ -1,0 +1,513 @@
+# # # @router.post(
+# # #     "/complaints",
+# # #     summary="Create Complaint",
+# # #     response_model=None
+# # # )
+# # # async def create_complaint(
+# # #     keycloak_user: Annotated[UserInSignInKeyCloak, Depends(get_user_info)],
+# # #     db: Annotated[AsyncSession, Depends(async_get_db)],
+# # #     disability_card: str = Form(...),
+# # #     disability_address: Optional[str] = Form(None),
+# # #     case_type: Optional[str] = Form(None),
+# # #     complainant_name: Optional[str] = Form(None),
+# # #     complainant_relation: Optional[str] = Form(None),
+# # #     receiver_name: Optional[str] = Form(None),
+# # #     receiver_position: Optional[str] = Form(None),
+# # #     complaint_type_id: Optional[int] = Form(None),
+# # #     is_disability: Optional[str] = Form(None),
+# # #     correct_value: Optional[str] = Form(None),
+# # #     complaint_image: UploadFile = File(...),
+# # # ):
+# # #     try:
+# # #         logging.info("Authenticated user: %s", keycloak_user.username)
+# # #         db_user = await validate_user(keycloak_user.username, keycloak_user, db)
+# # #         user_id = db_user["id"]
+
+# # #         # --- Convert form string to boolean ---
+# # #         is_disability_bool = False
+# # #         if is_disability is not None:
+# # #             if isinstance(is_disability, str):
+# # #                 is_disability_bool = is_disability.lower() == "true"
+# # #             elif isinstance(is_disability, bool):
+# # #                 is_disability_bool = is_disability
+
+# # #         # --- Fetch disability name if applicable ---
+# # #         disability_name = None
+# # #         if is_disability_bool:
+# # #             if not disability_card:
+# # #                 return {"error": True, "message": "disability_card is required when is_disability is True"}
+
+# # #             if len(disability_card) > 100:
+# # #                 return {"error": True, "message": "លេខបណ្ណ័ពិការភាពមិនត្រឹមត្រូវ!"}
+
+# # #             stmt = select(Main).where(Main.disability_code == disability_card)
+# # #             result = await db.execute(stmt)
+# # #             main_record = result.scalar_one_or_none()
+# # #             if not main_record:
+# # #                 return {"error": True, "message": f"លេខបណ្ណ័ពិការភាព '{disability_card}' មិនមានក្នុងទិន្នន័យ!"}
+
+# # #             disability_name = " ".join(filter(None, [main_record.family_name, main_record.given_name]))
+
+# # #             logging.info("Fetched disability_name: %s", disability_name)
+
+# # #         # --- Validate complaint type ---
+# # #         complaint_type = None
+# # #         if complaint_type_id is not None:
+# # #             stmt = select(ComplaintTypeTable).where(
+# # #                 ComplaintTypeTable.id == complaint_type_id,
+# # #                 ComplaintTypeTable.is_deleted == False
+# # #             )
+# # #             result = await db.execute(stmt)
+# # #             complaint_type = result.scalar_one_or_none()
+# # #             if not complaint_type:
+# # #                 return {"error": True, "message": "លេខសម្គាល់ ប្រភេទបណ្តឹងតវ៉ា ឬប្រភេទក្លែងបន្លំមិនត្រឹមត្រូវ!"}
+
+# # #         # --- Check for duplicate complaint ---
+# # #         stmt_check = select(ComplaintTable).where(
+# # #             ComplaintTable.disability_card == disability_card,
+# # #             ComplaintTable.case_type == case_type
+# # #         )
+# # #         result_check = await db.execute(stmt_check)
+# # #         existing_complaint = result_check.scalar_one_or_none()
+# # #         if existing_complaint:
+# # #             return {"error": True, "message": "ទិន្ន័យមានរួចហើយ"}
+
+# # #         # --- Read and upload file ---
+# # #         content = await complaint_image.read()
+# # #         unique_id = str(uuid.uuid4())
+# # #         file_extension = complaint_image.filename.split(".")[-1]
+# # #         file_path = f"complaints/{unique_id}.{file_extension}"
+
+# # #         await MinioService.upload_file(
+# # #             file_content=content,
+# # #             file_name=file_path,
+# # #             content_type=complaint_image.content_type
+# # #         )
+
+# # #         # --- Prepare complaint object ---
+# # #         complaint_internal = ComplaintCreateInternal(
+# # #             disability_card=disability_card,
+# # #             disability_address=disability_address,
+# # #             case_type=case_type,
+# # #             complainant_name=complainant_name,
+# # #             complainant_relation=complainant_relation,
+# # #             receiver_name=receiver_name,
+# # #             receiver_position=receiver_position,
+# # #             complaint_type_id=complaint_type_id,
+# # #             is_disability=is_disability_bool,
+# # #             correct_value=correct_value,
+# # #             complaint_image=file_path,
+# # #             disability_name=disability_name,
+# # #             created_by=user_id,
+# # #             updated_by=user_id,
+# # #             submitted_at=datetime.utcnow()
+# # #         )
+
+# # #         # --- Save to DB ---
+# # #         created = await crud_complaint.create(db=db, object=complaint_internal)
+# # #         await db.commit()
+# # #         await db.refresh(created)
+
+# # #         # --- Generate accessible URL ---
+# # #         image_url = get_asset_url(created.complaint_image, keycloak_user.token)
+
+# # #         return {
+# # #             "error": False,
+# # #             "message": "Complaint created successfully",
+# # #             "data": {
+# # #                 "id": created.id,
+# # #                 "disability_card": created.disability_card,
+# # #                 "disability_name": disability_name,
+# # #                 "complaint_image": image_url,
+# # #                 "correct_value": created.correct_value,
+# # #                 "case_type": created.case_type,
+# # #                 "complainant_name": created.complainant_name,
+# # #                 "complainant_relation": created.complainant_relation,
+# # #                 "receiver_name": created.receiver_name,
+# # #                 "receiver_position": created.receiver_position,
+# # #                 "complaint_type_id": created.complaint_type_id,
+# # #                 "is_disability": created.is_disability,
+# # #             }
+# # #         }
+
+# # #     except Exception as e:
+# # #         await db.rollback()
+# # #         logging.error("Error creating complaint: %s", str(e))
+# # #         return {"error": True, "message": "Internal server error"}
+
+
+# # ============================
+
+
+
+# # import asyncio
+# # import logging
+# # import uuid
+# # from datetime import UTC, datetime
+
+# # from sqlalchemy import (
+# #     Boolean,
+# #     Column,
+# #     DateTime,
+# #     ForeignKey,
+# #     Integer,
+# #     MetaData,
+# #     String,
+# #     Table,
+# #     insert,
+# #     select,
+# # )
+# # from sqlalchemy.dialects.postgresql import UUID
+
+# # from ..app.core.config import settings
+# # from ..app.core.db.database import AsyncSession, async_engine, local_session
+# # from ..app.core.services.spr_service import encrypt_password
+# # from ..app.models.user import User
+
+# # logging.basicConfig(level=logging.INFO)
+# # logger = logging.getLogger(__name__)
+
+
+# # async def create_first_user(session: AsyncSession) -> None:
+# #     try:
+# #         email = settings.ADMIN_EMAIL
+# #         username = settings.ADMIN_USERNAME
+
+# #         # Check if admin already exists
+# #         query = select(User).filter_by(email=email)
+# #         result = await session.execute(query)
+# #         user = result.scalar_one_or_none()
+
+# #         if user is None:
+# #             metadata = MetaData()
+
+# #             user_table = Table(
+# #                 "user",
+# #                 metadata,
+# #                 Column("id", Integer, primary_key=True, autoincrement=True, nullable=False),
+# #                 Column("name", String(30), nullable=False),
+# #                 Column("username", String(20), nullable=False, unique=True, index=True),
+# #                 Column("email", String(50), nullable=False, unique=True, index=True),
+# #                 Column("hashed_password", String, nullable=False),
+# #                 Column("profile_image_url", String, default="https://profileimageurl.com"),
+# #                 Column(
+# #                     "uuid",
+# #                     UUID(as_uuid=True),
+# #                     primary_key=True,
+# #                     default=uuid.uuid4,
+# #                     unique=True,
+# #                 ),
+# #                 Column(
+# #                     "created_at",
+# #                     DateTime(timezone=True),
+# #                     default=lambda: datetime.now(UTC),
+# #                     nullable=False,
+# #                 ),
+# #                 Column("updated_at", DateTime),
+# #                 Column("deleted_at", DateTime),
+# #                 Column("is_deleted", Boolean, default=False, index=True),
+# #                 Column("is_superuser", Boolean, default=False),
+# #                 Column("tier_id", Integer, ForeignKey("tier.id"), index=True),
+# #                 Column("gazetteer_code", String(10), default=""),
+# #             )
+
+# #             # Common values
+# #             GAZETTEER_CODE = "010201"
+# #             DEFAULT_PASSWORD = "123456"
+
+# #             # ----------- Users -----------
+# #             users_data = [
+# #                 # CA user
+# #                 {
+# #                     "name": "មន្ត្រី",
+# #                     "email": "gs_commune@gmail.com",
+# #                     "username": "gs_commune",
+# #                     "hashed_password": encrypt_password(DEFAULT_PASSWORD),
+# #                     "gazetteer_code": GAZETTEER_CODE,
+# #                 },
+
+# #                 # PWD External
+# #                 {
+# #                     "name": "PWD External",
+# #                     "email": "pwd_external_user@gmail.com",
+# #                     "username": "pwd_external_user",
+# #                     "hashed_password": encrypt_password(DEFAULT_PASSWORD),
+# #                     "gazetteer_code": GAZETTEER_CODE,
+# #                 },
+
+# #                 # ✅ NEW USER (your request)
+# #                 {
+# #                     "name": "Sopheak Chan123",
+# #                     "email": "sopheak123@example.com",
+# #                     "username": "sopheak123",
+# #                     "hashed_password": encrypt_password(DEFAULT_PASSWORD),
+# #                     "gazetteer_code": GAZETTEER_CODE,
+# #                 },
+# #             ]
+
+# #             # ----------- Extra 5 users -----------
+# #             for i in range(1, 6):
+# #                 users_data.append(
+# #                     {
+# #                         "name": f"មន្ត្រី{i}",
+# #                         "email": f"gs_commune{i}@gmail.com",
+# #                         "username": f"gs_commune{i}",
+# #                         "hashed_password": encrypt_password(DEFAULT_PASSWORD),
+# #                         "gazetteer_code": GAZETTEER_CODE,
+# #                     }
+# #                 )
+
+# #             # ----------- Insert all users -----------
+# #             async with async_engine.connect() as conn:
+# #                 for user_data in users_data:
+# #                     await conn.execute(insert(user_table).values(user_data))
+
+# #                 await conn.commit()
+
+# #             logger.info(f"Users including {username} created successfully.")
+
+# #         else:
+# #             logger.info(f"Admin user {username} already exists.")
+
+# #     except Exception as e:
+# #         logger.error(f"Error creating users: {e}")
+
+
+# # async def main():
+# #     async with local_session() as session:
+# #         await create_first_user(session)
+
+
+# # if __name__ == "__main__":
+# #     asyncio.run(main())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # # for is_ability when user input false so it will there no data i do not want to response like that:
+# # # {
+# # # 	"error": false,
+# # # 	"message": "Complaint created successfully",
+# # # 	"data": {
+# # # 		"id": 37,
+# # # 		"disability_card": "020203062268459",
+# # # 		"disability_name": null,
+# # # 		"complaint_image": "https://spr-stgapi.digitalsp.gov.kh/api/v1/Files/portal-pwd-dev/complaints/45d3605b-4ece-4b88-bdea-e8b508c4cd64.jpg?token=eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJJcHN2bFg2Y081NFRycmRFWk95NlJ0VlBld0UwWFItUkpXMVd3Z1ZCNmI4In0.eyJleHAiOjE3NzUwMTEzMjUsImlhdCI6MTc3NDQwNjUyNSwianRpIjoiODVkOWViYzQtZDcxNC00ODAzLWFlYzQtNTUyODQ1ZWM0ZjEzIiwiaXNzIjoiaHR0cHM6Ly9pZG0uZGlnaXRhbHNwLmdvdi5raC9yZWFsbXMvcG9ydGFsLW1vbm9yZXBvIiwiYXVkIjpbInBvcnRhbC1wd2QiLCJhY2NvdW50IiwicG9ydGFsLWlkcG9vciJdLCJzdWIiOiJiZDM0Yjk2Zi01MDJhLTQ1ZjUtOWMzYy05OGQwNzA3ODI2ZTEiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJwb3J0YWwtbW9ub3JlcG8iLCJzZXNzaW9uX3N0YXRlIjoiNGQzNDhhYjAtMjI3NC00OWE4LWEyZDAtOGI4YzE4M2QwNDJhIiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyJodHRwczovL3N0YWdpbmcuZGlnaXRhbHNwLmdvdi5raC8qIiwiaHR0cDovL2xvY2FsaG9zdDozMDAwMC8qIiwiaHR0cDovL2xvY2FsaG9zdDozMDAwLyoiLCJodHRwOi8vMTAuMC4xNTYuMTQzOjMwMDAvKiIsImh0dHBzOi8vYWRtaW4uZGlnaXRhbHNwLmdvdi5raC8qIiwiaHR0cDovL2xvY2FsaG9zdC8qIiwiaHR0cHM6Ly9kZXYuZGlnaXRhbHNwLmdvdi5raC8qIl0sInJlc291cmNlX2FjY2VzcyI6eyJwb3J0YWwtbW9ub3JlcG8iOnsicm9sZXMiOlsiY2EiLCJvcGVyYXRvciJdfSwicG9ydGFsLXB3ZCI6eyJyb2xlcyI6WyJjYSJdfSwiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19LCJwb3J0YWwtaWRwb29yIjp7InJvbGVzIjpbImNhIl19fSwic2NvcGUiOiJlbWFpbCBwcm9maWxlIiwic2lkIjoiNGQzNDhhYjAtMjI3NC00OWE4LWEyZDAtOGI4YzE4M2QwNDJhIiwibnNhZl9wYXNzd29yZCI6ImdBQUFBQUJuNjh2TlpwUlJNUkNnWDdpMU5oQndzWVZqN2w2UF8yejM3VzdrZXlVSkdxLXhiUjIzdnBoVTM5RnBrZnRlaXJzUDh0MjVZYVhYMVNESmRNT3ZZQkhtR1hXTTBnPT0iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiY29tbXVuZV9uYW1lIjoi4Z6f4Z6E4Z-S4Z6A4Z624Z6P4Z-L4Z6f4Z624Z6b4Z624Z6A4Z-G4Z6a4Z6-4Z6AIiwicHJlZmVycmVkX3VzZXJuYW1lIjoidmVhc25hX2NhIiwiZ2l2ZW5fbmFtZSI6IuGemOGek-GfkuGej-GfkuGemuGeuOGeouGek-Geu-GenOGej-GfkuGej-GegOGemOGfkuGemOGenOGet-GekuGeuCIsInByb3ZpbmNlX25hbWUiOiJCYW50ZWF5IE1lYW5jaGV5IiwiY2xpZW50X3JvbGVzIjpbImNhIiwib3BlcmF0b3IiLCJjYSIsIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiLCJjYSJdLCJnYXpldHRlZXJfY29kZSI6IjE3MTAwNCIsImdhemV0dGVlcl9jb2RlcyI6WyIxNzEwMDQiLCIxNzAyMDEiLCIwMTAyMDEiXSwibnNhZl91c2VybmFtZSI6InZlYXNuYV9jYSIsIm5hbWUiOiLhnpjhnpPhn5Lhno_hn5LhnprhnrjhnqLhnpPhnrvhnpzhno_hn5Lhno_hnoDhnpjhn5LhnpjhnpzhnrfhnpLhnrgiLCJwd2RfdXNlcm5hbWUiOiJnc19jb21tdW5lIiwiZW1haWwiOiJ2ZWFzbmFfY2FAZ21haWwuY29tIiwidXNlcm5hbWUiOiJ2ZWFzbmFfY2EiLCJpZHBvb3JfdXNlcm5hbWUiOiJ2ZWFzbmFfaWRwb29yX2NhIn0.nMO63odx_NUXDeShl7BZ7w9mE2BXRNHEmK7SjenQuki7woT-8yYOZugSrVRRfzTrjGdo_H-EtgWcq5aPJslKbHiqQicq38x2kpxduRku3z9Yu5I-YFsKo5i_mSpH-Afug5CCPkCEHTN-dNa4VlIDMJxAKYzYw7-Y-JwXYIoxqertN6JSbiYXlqr4udA_AWZjp84brwStWEgqjsW4ZrZl0C_hb1G-OR0DshOKqJr7MYMqsxGDZtyaJKFQIIk3mqio3D6gZdWSoSJwrNHSd16yPakjdQaRhQQTRuqIuo8qA7HYPkDOptKrZ_J6DBtcj03l1KJSHsca4xZS3hPHmiFnHQ",
+# # # 		"correct_value": "កែតម្រូវអាស័យដ្ឋាន",
+# # # 		"case_type": "FRAUD",
+# # # 		"complainant_name": "Ma Sa",
+# # # 		"complainant_relation": "Mother",
+# # # 		"receiver_name": "Officer Chan",
+# # # 		"receiver_position": "Manager",
+# # # 		"complaint_type_id": 14,
+# # # 		"is_disability": false
+# # # 	}
+# # # }
+
+
+
+
+
+
+
+
+# # from typing import Optional
+# # from fastcrud import FastCRUD
+# # from sqlalchemy import select
+# # from sqlalchemy.ext.asyncio import AsyncSession
+# # from sqlalchemy.dialects.postgresql import insert
+# # from datetime import datetime, UTC
+
+# # from ..models.user_profile import UserProfile
+# # from ..schemas.user_profile import UserProfileCreate, UserProfileUpdate
+
+
+# # class CRUDUserProfile(
+# #     FastCRUD[UserProfile, UserProfileCreate, UserProfileUpdate, None, None, None]
+# # ):
+# #     """CRUD operations for UserProfile with correct UPSERT logic."""
+
+# #     async def get_by_user_id_pwd(
+# #         self, db: AsyncSession, user_id_pwd: str
+# #     ) -> Optional[UserProfile]:
+# #         """Get a user profile by user_id_pwd (UNIQUE FIELD)."""
+# #         stmt = select(UserProfile).where(
+# #             UserProfile.user_id_pwd == user_id_pwd
+# #         )
+# #         result = await db.execute(stmt)
+# #         return result.scalar_one_or_none()
+
+# #     async def create_or_update(
+# #         self, db: AsyncSession, profile_data: UserProfileCreate
+# #     ) -> None:
+# #         """
+# #         UPSERT:
+# #         - If user_id_pwd exists → UPDATE
+# #         - If not → INSERT
+# #         """
+
+# #         stmt = insert(UserProfile).values(
+# #             user_id=profile_data.user_id,
+# #             token=profile_data.token,
+# #             user_id_pwd=profile_data.user_id_pwd,
+# #             created_at=datetime.now(UTC),
+# #         )
+
+# #         stmt = stmt.on_conflict_do_update(
+# #             index_elements=["user_id_pwd"],  # ✅ UNIQUE FIELD
+# #             set_={
+# #                 "token": profile_data.token,
+# #                 "user_id": profile_data.user_id,
+# #                 "updated_at": datetime.now(UTC),
+# #             },
+# #         )
+
+# #         await db.execute(stmt)
+# #         await db.commit()
+
+
+# # # Global instance
+# # crud_user_profile = CRUDUserProfile(UserProfile)
+
+
+
+
+
+
+# {
+# 			"disability_card": "020203067888901",
+# 			"disability_name": "ខាសខាសខាស ខាសខាសខាស",
+# 			"disability_address": "Phnom Penh",
+# 			"case_type": "FRAUD",
+# 			"complainant_name": "Ma Sa",
+# 			"complainant_relation": "Mother",
+# 			"receiver_name": "Officer Chan",
+# 			"receiver_position": "Manager",
+# 			"complaint_type_id": 27,
+# 			"is_disability": true,
+# 			"submitted_at": "2026-04-02T07:16:43.982439",
+# 			"correct_value": "កែតម្រូវអាស័យដ្ឋាន",
+# 			"complaint_image": "complaints/3c3f19d8-6c80-4f5a-9e3b-d972353159cc.jpg",
+# 			"created_at": "2026-04-02T07:16:43.983581+00:00",
+# 			"updated_at": null,
+# 			"id": 46,
+# 			"created_by": 42,
+# 			"updated_by": 42
+# 		}
+
+
+
+
+# detail=f"Record with disability_code '{disability_code}' not found",
+
+# 0102
+# មិនអាចរកឃើញទិន្នន័យ
+# 5026
+
+
+# await validate_user(username, keycloak_user, db)
+
+
+
+=======================
+# async def add_survey(db_user: dict, add_survey_param: dict) -> dict:
+#     """
+#     Add a new survey to DMIS with field-level validation including type checking.
+#     """
+#     try:
+#         # Get DMIS token
+#         token_data = await get_current_token(db_user)
+#         if token_data.get("error"):
+#             return {"error": True, "message": token_data.get("message")}
+
+#         token = token_data.get("token")
+#         if not token:
+#             return {"error": True, "message": "Authorization token is missing"}
+
+#         # ----------------------------
+#         # Field-level validation
+#         # ----------------------------
+#         required_fields = {
+#             "disability_name": str,
+#             "disability_gender": int,
+#             "is_disability_interview": bool,
+#             "is_tvet": bool,
+#             "created_by": int,
+#             "province_id": str,
+#             "district_id": str,
+#             "commune_id": str,
+#             "village_id": str
+#         }
+
+#         optional_fields = {
+#             "disability_code": str,
+#             "is_id_poor": bool,
+#             "is_update_id_poor": bool,
+#             "is_family_package": bool
+#         }
+
+#         errors = {}
+
+#         # Check required fields
+#         for field, field_type in required_fields.items():
+#             value = add_survey_param.get(field)
+
+#             if value is None:
+#                 errors[field] = [f"The {field.replace('_', ' ')} field is required."]
+#             elif not isinstance(value, field_type):
+#                 errors[field] = [f"The {field.replace('_', ' ')} must be of type {field_type.__name__}."]
+
+#         # Check optional fields type only if they are provided
+#         for field, field_type in optional_fields.items():
+#             value = add_survey_param.get(field)
+#             if value is not None and not isinstance(value, field_type):
+#                 errors[field] = [f"The {field.replace('_', ' ')} must be of type {field_type.__name__}."]
+
+#         # Validate disability_gender value
+#         if "disability_gender" not in errors and add_survey_param.get("disability_gender") not in [1, 2]:
+#             errors["disability_gender"] = ["disability_gender must be 1 (male) or 2 (female)."]
+
+#         if errors:
+#             return {"error": True, "message": errors}
+
+#         # ----------------------------
+#         # Prepare DMIS API request
+#         # ----------------------------
+#         body = {key: add_survey_param.get(key) for key in add_survey_param.keys()}
+
+#         url = f"{DMIS_API_BASE_URL}/surveys/add"
+#         headers = {
+#             "Authorization": f"Bearer {token}",
+#             "Content-Type": "application/json"
+#         }
+
+#         # Call DMIS API
+#         async with aiohttp.ClientSession() as session:
+#             async with session.post(url, json=body, headers=headers, timeout=30) as response:
+#                 dmis_response = await response.json()
+#                 logging.info(f"{SERVICE_DMIS_AUTH} - Add survey response | status={response.status}")
+
+#                 if response.status == 400:
+#                     return {"error": True, "message": dmis_response.get("message", "Request validation failed")}
+
+#                 if response.status == 404:
+#                     return {"error": True, "message": "មិនអាចរកឃើញទិន្នន័យ!"}
+
+#                 return dmis_response
+
+#     except aiohttp.ClientError:
+#         return {"error": True, "message": "Connection error while accessing DMIS API."}
+
+#     except Exception as e:
+#         logging.error(f"{SERVICE_DMIS_AUTH} - Unexpected error | {str(e)}")
+#         return {"error": True, "message": f"Unexpected error: {str(e)}"}
