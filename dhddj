@@ -1,0 +1,40 @@
+# @router.post("/surveys/add")
+# async def add_survey_route(
+#     request: AddSurvey,
+#     keycloak_user: Annotated[dict, Depends(get_user_info)],
+#     db: Annotated[AsyncSession, Depends(async_get_db)],
+# ):
+#     db_user = await validate_user(keycloak_user.username, keycloak_user, db)
+
+#     add_survey_param = {
+#         "disability_code": request.disability_code,
+#         "disability_name": request.disability_name,
+#         "disability_gender": request.disability_gender,
+#         "is_disability_interview": request.is_disability_interview,
+#         "is_id_poor": request.is_id_poor,
+#         "is_update_id_poor": request.is_update_id_poor,
+#         "is_family_package": request.is_family_package,
+#         "is_tvet": request.is_tvet,
+#         "created_by": request.created_by,
+#         "province_id": request.province_id,
+#         "district_id": request.district_id,
+#         "commune_id": request.commune_id,
+#         "village_id": request.village_id,
+#     }
+
+#     try:
+#         dmis_result = await add_survey(db_user=db_user, add_survey_param=add_survey_param)
+
+#         if dmis_result.get("error"):
+#             return {"error": True, "message": dmis_result.get("message")}
+
+#         return dmis_result
+
+#     except HTTPException:
+#         raise
+
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"An unexpected error occurred: {str(e)}"
+#         )
