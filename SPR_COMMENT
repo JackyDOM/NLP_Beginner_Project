@@ -1,0 +1,316 @@
+async def _spr_cleanup_test_data(equity_card_numbers: list[str]):
+    """
+    Internal function to call SPR cleanup test data endpoint.
+
+    Args:
+        equity_card_numbers: List of equity card numbers to clean up
+
+    Returns:
+        dict: Response from SPR service
+
+    Raises:
+        HTTPException: If there is an error communicating with the SPR service
+    """
+    try:
+        # Get token for SPR service
+        token = await _get_token()
+        token = token.get("access_token", None)
+
+        if not token:
+            raise HTTPException(status_code=401, detail="Invalid access token")
+
+        # Set up request to SPR service
+        url = f"{spr_core_service_url}/Portals/cleanup-test-data"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        # Format payload for SPR service
+        spr_payload = {"equityCardNumbers": equity_card_numbers}
+
+        logging.info(f"Calling SPR cleanup test data endpoint with {len(equity_card_numbers)} equity card numbers")
+
+        payload_json = json.dumps(spr_payload)
+
+        context_data = {"Equity Cards Count": len(equity_card_numbers)}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=payload_json, headers=headers, timeout=60) as response:
+                data = await _handle_api_error(
+                    response,
+                    SERVICE_SPR_CLEANUP_TEST_DATA,
+                    "SPR CLEANUP ERROR",
+                    context_data,
+                    should_send_telegram_alert=True,
+                )
+                logging.info(
+                    f"SPR cleanup test data completed successfully for {len(equity_card_numbers)} equity cards"
+                )
+                return data
+
+    except aiohttp.ClientError as e:
+        await _handle_connection_error(
+            e,
+            SERVICE_SPR_CLEANUP_TEST_DATA,
+            {"Equity Cards Count": len(equity_card_numbers)},
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions without modification
+        raise
+    except Exception as e:
+        await _handle_unexpected_error(
+            e,
+            SERVICE_SPR_CLEANUP_TEST_DATA,
+            {"Equity Cards Count": len(equity_card_numbers)},
+        )
+
+
+============
+=====================
+
+
+async def spr_register_pwd(payload: dict) -> dict:
+    try:
+        token = await _get_token()
+
+        if not isinstance(token, dict):
+            return {"error": True, "message": f"Invalid token: {token}", "user": None}
+
+        access_token = token.get("access_token")
+
+        if not access_token:
+            return {"error": True, "message": "Missing access token", "user": None}
+
+        url = f"{settings.SPR_CORE_SERVICE_URL}/api/v1/Portals/register/PWD"
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        body = {
+            "username": settings.SPR_KEYCLOAK_USERNAME,
+            "password": settings.SPR_KEYCLOAK_PASSWORD,
+            "payload": payload
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                data=json.dumps(body),
+                headers=headers,
+                timeout=60
+            ) as response:
+
+                status = response.status
+                text = await response.text()
+
+                logger.info("SPR STATUS: %s", status)
+                logger.info("SPR RAW: %r", text)
+
+                # ❗ EMPTY RESPONSE
+                if not text or not text.strip():
+                    return {
+                        "error": True,
+                        "message": "SPR returned empty response",
+                        "user": None
+                    }
+
+                # ❗ TRY PARSE JSON
+                try:
+                    data = json.loads(text)
+                except Exception:
+                    return {
+                        "error": True,
+                        "message": f"SPR invalid JSON: {text}",
+                        "user": None
+                    }
+
+                # ❗ NOT DICT
+                if not isinstance(data, dict):
+                    return {
+                        "error": True,
+                        "message": f"SPR returned non-dict: {data}",
+                        "user": None
+                    }
+
+                # ❗ HANDLE STATUS
+                if status not in [200, 201]:
+                    return {
+                        "error": True,
+                        "message": data,
+                        "user": None
+                    }
+
+                return data  # ✅ always dict
+
+    except aiohttp.ClientError as e:
+        logger.exception("SPR connection error ❌")
+        return {
+            "error": True,
+            "message": str(e),
+            "user": None
+        }
+
+
+========================
+
+
+# async def spr_register_pwd(payload: dict) -> dict:
+#     try:
+#         token = await _get_token()
+#         access_token = token.get("access_token")
+
+#         if not access_token:
+#             raise HTTPException(status_code=401, detail="Invalid access token")
+
+#         url = f"{settings.SPR_CORE_SERVICE_URL}/api/v1/Portals/register/PWD"
+
+#         headers = {
+#             "Authorization": f"Bearer {access_token}",
+#             "Accept": "*/*",
+#             "Content-Type": "application/json",
+#         }
+
+#         body = {
+#             "username": settings.SPR_KEYCLOAK_USERNAME,
+#             "password": settings.SPR_KEYCLOAK_PASSWORD,
+#             "payload": payload
+#         }
+
+#         logger.info("SPR REQUEST START")
+#         logger.info("SPR URL: %s", url)
+#         logger.info("SPR PAYLOAD: %s", payload)
+
+#         connector = aiohttp.TCPConnector(ssl=False)
+
+#         async with aiohttp.ClientSession(connector=connector) as session:
+#             async with session.post(url, json=body, headers=headers, timeout=60) as response:
+
+#                 text = await response.text()
+
+#                 logger.info("SPR RESPONSE STATUS: %s", response.status)
+#                 logger.info("SPR RAW TEXT: %r", text)
+
+#                 data = None
+
+#                 if text and text.strip():
+#                     try:
+#                         data = json.loads(text)
+#                     except json.JSONDecodeError:
+#                         logger.warning("SPR returned invalid JSON")
+
+#                 if response.status in [200, 201]:
+#                     logger.info("SPR SUCCESS ✅")
+#                     logger.info("SPR RESPONSE DATA: %s", data)
+
+#                     return {
+#                         "error": False,
+#                         "message": "Success",
+#                         "data": data
+#                     }
+
+#                 logger.error("SPR FAILED ❌ Status=%s Response=%s", response.status, text)
+
+#                 return {
+#                     "error": True,
+#                     "status_code": response.status,
+#                     "message": text,
+#                     "data": None
+#                 }
+
+#     except aiohttp.ClientError as e:
+#         logger.exception("SPR connection error ❌")
+#         raise HTTPException(status_code=502, detail=str(e))
+
+
+=====================
+=========================
+===============================
+
+# async def spr_register_pwd(payload: dict) -> dict:
+#     try:
+#         token = await _get_token()
+#         access_token = token.get("access_token")
+
+#         if not access_token:
+#             raise HTTPException(status_code=401, detail="Invalid access token")
+
+#         url = f"{settings.SPR_CORE_SERVICE_URL}/api/v1/Portals/register/PWD"
+
+#         headers = {
+#             "Authorization": f"Bearer {access_token}",
+#             "Accept": "*/*",
+#             "Content-Type": "application/json",
+#         }
+
+#         body = {
+#             "username": settings.SPR_KEYCLOAK_USERNAME,
+#             "password": settings.SPR_KEYCLOAK_PASSWORD,
+#             "payload": payload
+#         }
+
+#         logger.info("SPR REQUEST START")
+#         logger.info("SPR URL: %s", url)
+#         logger.info("SPR PAYLOAD: %s", payload)
+
+#         connector = aiohttp.TCPConnector(ssl=False)
+
+#         async with aiohttp.ClientSession(connector=connector) as session:
+#             async with session.post(url, json=body, headers=headers, timeout=60) as response:
+
+#                 text = await response.text()
+#                 logging.error(f"SPR RESPONSE [{response.status}]: {text}")
+
+#                 if response.status >= 400:
+#                     return {
+#                         "error": True,
+#                         "status_code": response.status,
+#                         "message": text,
+#                         "data": None
+#                     }
+
+#                 try:
+#                     data = await response.json()
+#                 except Exception:
+#                     data = text
+
+#                 return {
+#                     "error": False,
+#                     "message": "Success",
+#                     "data": data
+#                 }
+
+#     except aiohttp.ClientError as e:
+#         logging.exception("SPR connection error")
+#         raise HTTPException(status_code=502, detail=str(e))
+
+===========
+=============
+=================
+
+    # if score_question and score_question.strip():
+    #     try:
+    #         questions = json.loads(score_question) # <-- frontend data parsed here
+    #         raw_json_to_save = score_question.strip()
+    #         logging.info("Using score_question from frontend")
+    #     except json.JSONDecodeError as e:
+    #         raise HTTPException(status_code=400, detail=f"Invalid JSON in score_question: {e}")
+    # else:
+    #     questions = score_question_array
+    #     raw_json_to_save = json.dumps(score_question_array)
+    #     logging.info("No score_question from frontend → using default array")
+
+=========
+
+        # db.add(registration_data)
+        # await db.flush()
+
+ឲឲឲឲឲឲឲឲឲឲឲឲ
+ឲឲឲឲឲឲឲឲឲឲឲឲឲឲឲឲឲឲ
+
+    # ID Poor Information
+    # family_code_idpoor: Annotated[str, Form()],
+    # family_code_idpoor: Annotated[Optional[str], Form()],
