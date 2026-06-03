@@ -1,0 +1,1400 @@
+import asyncio
+import logging
+import uuid
+from datetime import UTC, datetime
+from datetime import date
+
+from sqlalchemy import (
+    Boolean,
+    Date,
+    Column,
+    DateTime,
+    ForeignKey,
+    Text,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    insert,
+    select,
+    delete,
+)
+from sqlalchemy.dialects.postgresql import UUID
+
+from ..app.core.config import settings
+from ..app.core.db.database import AsyncSession, async_engine, local_session
+from ..app.core.services.spr_service import encrypt_password
+from ..app.models.disability_type import DisabilityType
+from ..app.models.question import Question
+from ..app.models.answer import Answer
+from ..app.models.user import User
+from ..app.models.question_answer import QuestionAnswer
+from ..app.models.category_question import CategoryQuestion
+from ..app.models.question_answer_view import QuestionAnswerView
+from ..app.models.category_question_view import CategoryQuestionView
+from ..app.models.main import Main,Gender, AccountStatus
+from ..app.models.sickness import Sickness
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Disability-Type (ពិការភាពកាយសម្បទា, ពិបាកធ្វើចលនាលើ)
+async def create_disability_type(session: AsyncSession) -> None:
+    try:
+        result = await session.execute(select(User.id).where(User.username == "gs_commune"))
+        admin_user = result.scalar_one_or_none()
+        created_by = admin_user if admin_user else None
+
+        DISABILITY_TYPES_DATA = [
+                # Physical Disabilities - Q1
+                {"title": "ពិការភាពកាយសម្បទា", "code": "Q1", "description": "ពិការភាពផ្នែកកាយសម្បទា និងចលនា", "parent_code": None, "image": "ពិការភាពកាយសម្បទា.png"},
+                {"title": "ពិបាកធ្វើចលនាលើ", "code": "Q1_1", "description": "ពិបាកធ្វើចលនាផ្នែកខាងលើនៃរាងកាយ", "parent_code": "Q1", "image": "ពិបាកធ្វើចលនាលើ.png"},
+                {"title": "ពិបាកធ្វើចលនាក្រោម", "code": "Q1_2", "description": "ពិបាកធ្វើចលនាផ្នែកខាងក្រោមនៃរាងកាយ", "parent_code": "Q1", "image": "ពិបាកធ្វើចលនាក្រោម.png"},
+                {"title": "ពិបាកសម្របសម្រួលដងខ្លួនខ្នង", "code": "Q1_3", "description": "ពិបាកក្នុងការសម្របសម្រួលដងខ្លួនខ្នង", "parent_code": "Q1", "image": "ពិបាកសម្របសម្រួលដងខ្លួនខ្នង.png"},
+                {"title": "ពិការភាពសិរីរាង្គខាងក្នុង", "code": "Q1_4", "description": "ពិការភាពសិរីរាង្គខាងក្នុងរាងកាយ", "parent_code": "Q1", "image": "ពិការភាពសិរីរាង្គខាងក្នុង.png"},
+                
+                # Sensory Disabilities - Q2
+                {"title": "ពិការភាពញ្ញាណដឹង", "code": "Q2", "description": "ពិការភាពផ្នែកញ្ញាណ និងការដឹងស្គាល់", "parent_code": None, "image": "ពិការភាពញ្ញាណដឹង.png"},
+                {"title": "ពិបាកស្តាប់", "code": "Q2_1", "description": "ពិបាកក្នុងការស្តាប់ឮ", "parent_code": "Q2", "image": "ពិបាកស្តាប់.png"}, 
+                {"title": "ពិបាកនិយាយ", "code": "Q2_2", "description": "ពិបាកក្នុងការនិយាយ", "parent_code": "Q2", "image": "ពិបាកនិយាយ.png"},
+                {"title": "ពិបាកមើល", "code": "Q2_3", "description": "ពិបាកក្នុងការមើលឃើញ", "parent_code": "Q2", "image": "ពិបាកមើល.png"},
+                
+                # Intellectual Disabilities - Q3
+                {"title": "ពិការភាពសតិបញ្ញា", "code": "Q3", "description": "ពិការភាពផ្នែកសតិបញ្ញា និងការយល់ដឹង", "parent_code": None, "image": "ពិការភាពសតិបញ្ញា.png"},
+                {"title": "ដោស៊ីនដ្រូម", "code": "Q3_1", "description": "ជំងឺដោស៊ីនដ្រូម", "parent_code": "Q3", "image": "ដោស៊ីនដ្រូម.png"},
+                {"title": "អូទីស្សឹម", "code": "Q3_2", "description": "ជំងឺអូទីស្សឹម", "parent_code": "Q3", "image": "អូទីស្សឹម.png"},
+                {"title": "ពិការចលករខួរក្បាល(ស៊ីភី)", "code": "Q3_3", "description": "ពិការចលករខួរក្បាល (Cerebral Palsy)", "parent_code": "Q3", "image": "ពិការចលករខួរក្បាល(ស៊ីភី).png"},
+                
+                # Mental Health Disabilities - Q4
+                {"title": "ពិការផ្លូវចិត្ត", "code": "Q4", "description": "ពិការភាពផ្នែកផ្លូវចិត្ត និងអារម្មណ៍", "parent_code": None, "image": "ពិការភាពភ្លូវចិត្ត.png"},
+                {"title": "ពិការភាពផ្លូវចិត្ត", "code": "Q4_1", "description": "ពិការភាពផ្លូវចិត្តទូទៅ", "parent_code": "Q4", "image": "ពិការភាពផ្លូវចិត្ត.png"},
+                {"title": "ពិបាកចងចាំ", "code": "Q4_2", "description": "ពិបាកក្នុងការចងចាំ និងការចាំ", "parent_code": "Q4", "image": "ពិបាកចងចាំ.png"},
+                
+                # Other Disabilities - Q5
+                {"title": "ពិការភាពផ្សេងៗ", "code": "Q5", "description": "ពិការភាពប្រភេទផ្សេងៗ", "parent_code": None, "image": "ពិការភាពផ្សេងៗ.png"},
+                {"title": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "code": "Q5_1", "description": "ជំងឺរុំរលាយសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5", "image": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី.png"},
+                {"title": "ពិការភាពផ្សេងៗ", "code": "Q5_2", "description": "ពិការភាពប្រភេទផ្សេងៗដទៃទៀត", "parent_code": "Q5", "image": "ពិការភាពផ្សេង.png"},
+
+                #living enviroment - Q6
+                {"title": "បរិស្ថានរស់នៅ", "code": "Q6", "description": "បរិស្ថានរស់នៅ", "parent_code": None, "image": "បរិស្ថានរស់នៅ.png"},
+                {"title": "សកម្មភាពសង្គម", "code": "Q6_1", "description": "បរិស្ថានរស់នៅ", "parent_code": "Q6", "image": "សកម្មភាពសង្គម.png"},
+                {"title": "ជំនួយការផ្ទាល់ខ្លួន", "code": "Q6_2", "description": "បរិស្ថានរស់នៅ", "parent_code": "Q6", "image": "ជំនួយការផ្ទាល់ខ្លួន.png"},
+                {"title": "ឧបករណ៍ជំនួយ", "code": "Q6_3", "description": "បរិស្ថានរស់នៅ", "parent_code": "Q6", "image": "ឧបករណ៍ជំនួយ.png"},
+            ]
+        inserted = 0
+
+        for item in DISABILITY_TYPES_DATA:
+            # Create and insert using the model
+            new_type = DisabilityType(
+                title=item["title"],
+                code=item["code"],
+                description=item["description"],
+                parent_code=item.get("parent_code"),
+                image=item.get("image"),
+                status=True,
+                created_by=created_by,
+                updated_by=created_by
+            )
+            session.add(new_type)
+            inserted += 1
+
+        await session.commit()
+        logger.info(f"Disability types seeding completed → {inserted} inserted")
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating disability types: {str(e)}", exc_info=True)
+        raise
+
+
+# Questions of Disability-Type
+async def create_question(session: AsyncSession) -> None:
+    try:
+        result = await session.execute(select(User.id).where(User.username == "gs_commune"))
+        admin_user = result.scalar_one_or_none()
+        created_by = admin_user if admin_user else None
+
+        QUESTION_DISABILITY_TYPES = [
+            # Age under 8 years old
+            # Physical disability
+            {"question": "តើកុមារអាចប្រើមេដៃចាប់កាន់ ឬលើកវត្ថុអ្វីមួយបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1_1", "unique_code": "Q1_1_1"},
+            {"question": "តើកុមារអាចប្រើម្រាមដៃរើសវត្ថុដាក់ ដោះ ឬបិទឡេវអាវបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1_1", "unique_code": "Q1_1_2"},
+            {"question": "តើកុមារអាចបង្វិលកដៃទៅឆ្វេង ឬស្តាំបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1_1", "unique_code": "Q1_1_3"},
+            {"question": "តើកុមារអាចបត់កែងដៃ ដោយដាក់ចុងដៃលើស្មាបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1_1", "unique_code": "Q1_1_4"},
+            {"question": "តើកុមារអាចលើក ដាក់ ឬទាញ វត្ថុបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1_1", "unique_code": "Q1_1_5"},
+            {"question": "តើកុមារអាចលើកដៃដាក់ទៅមុខត្រឹមភ្នែកខ្លួនឯងបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1_1", "unique_code": "Q1_1_6"},
+            {"question": "តើកុមារអាចញាក់ ឬបង្វិលស្មាបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1_1", "unique_code": "Q1_1_7"},
+
+            {"question": "តើកុមារអាចឈរឱ្យមានលំនឹងមួយកន្លែងលើសពី១នាទីបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_1"},
+            {"question": "តើកុមារអាចដើរលើបន្ទាត់ត្រង់បានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_2"},
+            {"question": "តើកុមារអាចដើរចុងជើង ឬចង្អើតចុងជើងបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_3"},
+            {"question": "តើកុមារអាចបង្វិលកជើង ទៅឆ្វេង ឬទៅស្តាំ ឡើង ឬចុះបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_4"},
+            {"question": "តើកុមារអាចឡើងចុះកៅអីកម្ពស់៣តឹកបានដែរឬទេ? (សាច់ដុំជើង)", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_5"},
+            {"question": "តើកុមារអាចឡើងចុះកាំជណ្តើរបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_6"},
+            {"question": "តើកុមារអាចឡើងចុះកាំជណ្តើរបានដែរឬទេ ពេលមានអ្នកជួយ ឬឧបករណ៍ជំនួយ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_7"},
+            {"question": "តើកុមារអាចដើរដោយខ្លួនឯងបានចម្ងាយប៉ុន្មានម៉ែត្រ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_8"},
+            {"question": "តើកុមារអាចដើរបានប៉ុន្មានម៉ែត្រ ដោយប្រើឧបករណ៍ជំនួយ ឬមានអ្នកជួយ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1_2", "unique_code": "Q1_2_9"},
+
+            {"question": "តើកុមារដេកក្នុងសភាពចុះខ្សោយខ្លាំងដែរឬទេ?", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code": "Q1_3_1"},
+            {"question": "តើកុមារអាចក្រោកអង្គុយដោយគ្មានជំនួយបានដែរឬទេ?", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code": "Q1_3_2"},
+            {"question": "តើកុមារបាត់បង់មុខងារចលករមួយចំហៀងខ្លួនឆ្វេង ឬស្តាំ ឬទាំងសងខាងដែរឬទេ? (លើស៦ខែ)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code":"Q1_3_3"},
+            {"question": "តើដងខ្លួនរបស់កុមារខូចទ្រង់ទ្រាយដែរឬទេ? (វៀច កោង គម ជាអចិន្រ្តៃយ៍)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code": "Q1_3_4"},
+            {"question": "តើដងខ្លួន និងអវយវៈរបស់កុមារញាក់ញ័រ ឬស្ពឹកខ្លាំងដែរឬទេ? (លើស៦ខែ)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code": "Q1_3_5"},
+            {"question": "តើកុមារធ្លាប់មានរបួសខួរឆ្អឹងខ្នងដែរឬទេ?", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code": "Q1_3_6"},
+            {"question": "តើកុមារបាត់បង់មុខងារចលករត្រឹមចង្កេះចុះក្រោមដែរឬទេ? (លើស៦ខែ)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code": "Q1_3_7"},
+            {"question": "តើកុមារឈឺចាប់ខ្លាំងជាប្រចាំត្រង់ក​ ចង្កេះ ឬដងខ្លួនដែរទេ? (ឈឺជាអចិន្រ្តៃយ៍)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code": "Q1_3_8"},
+            {"question": "តើកុមារប្រើថ្នាំលេប ឬចាក់ជាប្រចាំដែរឬទេ? (លើស៦ខែ)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1_3", "unique_code": "Q1_3_9"},
+
+            {"question": "តើកុមារធ្លាប់មានការវះកាត់ធំលើសរីរាង្គខាងក្នុងដែរឬទេ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1_4", "unique_code": "Q1_4_1"},
+            {"question": "តើសរីរាង្គខាងក្នុងរបស់កុមារធ្លាប់ឈឺចាប់ដែរឬទេ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1_4", "unique_code": "Q1_4_2"},
+            {"question": "តើកុមារប្រើឧបករណ៍ជំនួយសរីរាង្គដែរឬទេ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1_4", "unique_code": "Q1_4_3"},
+            {"question": "តើកុមារប្រើថ្នាំពេទ្យដែរឬទេ សម្រាប់ជំងឺដែលបានវះកាត់ធំ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1_4", "unique_code": "Q1_4_4"},
+            {"question": "តើកុមារអាចដើរ ឬលោតបានដែរឬទេចាប់តាំងពីក្រោយវះកាត់ធំ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1_4", "unique_code": "Q1_4_5"},
+            {"question": "តើកុមារអាចមើលថែទាំអនាម័យខ្លួនឯង ឬរស់នៅដោយឯករាជ្យបានដែរឬទេ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1_4", "unique_code": "Q1_4_6"},
+
+            # Cognitive disability
+            {"question": "តើកុមារអាចស្តាប់ឮដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2_1", "unique_code": "Q2_1_1"},
+            {"question": "តើកុមារមានប្រើឧបករណ៍ជំនួយការស្តាប់ជាប្រចាំដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2_1", "unique_code": "Q2_1_2"},
+            {"question": "បើខ្ញុំគោះប៊ិកលើបាតដៃរបស់ខ្ញុំ តើកុមារស្តាប់ឮដែរឬទេ? (គោះស្តាំឆ្វេងពីមុខ ពីក្រោយ)", "description": "ពិបាកស្តាប់", "parent_code": "Q2_1", "unique_code": "Q2_1_3"},
+            {"question": "តើកុមារពិបាកស្តាប់ ឬយល់ពីនរណាម្នាក់និយាយដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2_1", "unique_code": "Q2_1_4"},
+            {"question": "តើកុមារមានបញ្ហាក្នុងការស្តាប់វិទ្យុ ឬទូរទស្សន៍ដែរឬទេ? (ទោះបើកសំឡេងខ្លាំងៗក៏ដោយ)", "description": "ពិបាកស្តាប់", "parent_code": "Q2_1", "unique_code": "Q2_1_5"},
+            {"question": "តើកុមារពិបាកស្តាប់ នៅពេលនរណាម្នាក់និយាយតិចៗដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2_1", "unique_code": "Q2_1_6"},
+            {"question": "តើកុមារមានបញ្ហាស្តាប់ ដែលបណ្តាលឱ្យអ្នកប្រកែកជាមួយគេញឹកញាប់ដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2_1", "unique_code": "Q2_1_7"},
+
+            {"question": "តើកុមារអាចនិយាយ ឬសន្ទនាបានដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2_2", "unique_code": "Q2_2_1"},
+            {"question": "តើកុមារអាចនិយាយលើសពី៥ពាក្យជាប់គ្នាដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2_2", "unique_code": "Q2_2_2"},
+            {"question": "តើកុមារប្រើភាសាសញ្ញា ឬភាសាកាយវិការដែរឬទេ ពេលនិយាយ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2_2", "unique_code": "Q2_2_3"},
+            {"question": "តើកុមារពិបាក ក្នុងការនិយាយភាសាកំណើតរបស់ខ្លួនច្បាស់ដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2_2", "unique_code":"Q2_2_4"},
+            {"question": "តើកុមារអាចនិយាយត្រាប់តាមបានដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2_2", "unique_code":"Q2_2_5"},
+            {"question": "តើកុមារនិយាយ ដោយប្រើខ្យល់ច្រមុះ(ក្ងួរ) ដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2_2", "unique_code": "Q2_2_6"},
+            {"question": "តើកុមារមានការពិបាកបញ្ចេញសូរសំឡេងដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2_2", "unique_code": "Q2_2_7"},
+
+            {"question": "តើកុមារអាចមើលឃើញ ក្នុងបរិយាកាសធម្មតាដែរឬទេ?", "description": "ពិបាកមើល", "parent_code": "Q2_3", "unique_code": "Q2_3_1"},
+            {"question": "តើកុមារអាចមើលឃើញច្បាស់ដែរឬទេទោះពាក់វ៉ែនតាក៏ដោយ?", "description": "ពិបាកមើល", "parent_code": "Q2_3", "unique_code": "Q2_3_2"},
+            {"question": "តើកុមារអាចមើលឃើញម្រាមដៃច្បាស់ក្នុងចម្ងាយ៥ម៉ែត្រដែរឬទេ? (ទោះពាក់វែនតាក៏ដោយ)", "description": "ពិបាកមើល", "parent_code": "Q2_3", "unique_code": "Q2_3_3"},
+            {"question": "តើកុមារអាចមើលឃើញម្រាមដៃច្បាស់ក្នុងចម្ងាយ៣ម៉ែត្រដែរឬទេ? (ទោះពាក់វ៉ែនតាក៏ដោយ)", "description": "ពិបាកមើល", "parent_code": "Q2_3", "unique_code":"Q2_3_4"},
+            {"question": "តើកុមារអាចមើលឃើញម្រាមដៃច្បាស់ក្នុងចម្ងាយ៤០ម៉ែត្របានដែរឬទេ? (ពាក់វ៉ែនតាក៏ដោយ)", "description": "ពិបាកមើល", "parent_code": "Q2_3", "unique_code": "Q2_3_5"},
+            {"question": "តើកុមារអាចមើលឃើញពណ៏ (បែតង ខៀវ ក្រហម លឿង) ដែរឬទេ?", "description": "ពិបាកមើល", "parent_code": "Q2_3", "unique_code": "Q2_3_6"},
+
+            # Intellectual disability
+            {"question": "តើកុមារដេក ឬសរីរាង្គកាយ ពិសេសសាច់ដុំស្ថិតក្នុងសភាពចុះខ្សោយខ្លាំងដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3_1", "unique_code": "Q3_1_1"},
+            {"question": "តើកុមារមានឥរិយាបថពិបាកសម្របខ្លួនជាមួយសង្គមដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3_1", "unique_code": "Q3_1_2"},
+            {"question": "តើកុមារមានការនិយាយម្តងហើយម្តងទៀត ឬរវើរវាយដែរឬទេ? (និយាយដដែលៗ)", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3_1", "unique_code": "Q3_1_3"},
+            {"question": "តើកុមារនិយាយច្រើន ឬតិចតួចបំផុត ប៉ុន្តែពិបាកយល់ពីការប្រាស្រ័យទាក់ទងតាមពាក្យសម្តីដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3_1", "unique_code": "Q3_1_4"},
+            {"question": "តើកុមារមានអាកប្បកិរិយារញ៉េរញ៉ៃ ឬចលនាម្តងទៅនេះម្តងទៅនោះដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3_1", "unique_code": "Q3_1_5"},
+            {"question": "តើកុមារធ្លាប់រវើរវាយ ឬចង់ធើ្វនេះធើ្វនោះមិនធម្មតាដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3_1", "unique_code": "Q3_1_6"},
+            {"question": "តើកុមារពិបាកនិយាយគ្នាលើរឿងតែមួយ ឬរក្សាការសន្ទនាគ្នាទៅវិញទៅមកដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3_1", "unique_code": "Q3_1_7"},
+            {"question": "តើកុមារពិបាកក្នុងការយល់ដឹងពីអារម្មណ៍កុមារដទៃដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3_1", "unique_code": "Q3_1_8"},
+
+            {"question": "តើកុមារនិយាយតិចតួចហើយផ្តល់ចម្លើយមិនទាក់ទងទៅនឹងសំណួរដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_1"},
+            {"question": "តើកុមារមិនឆ្លើយតប បើហៅឈ្មោះចំៗ ឬគេចវេសពីការមើលភ្នែកដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_2"},
+            {"question": "តើកុមារពិបាកយល់អំពីអារម្មណ៍របស់កុមារដទៃដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_3"},
+            {"question": "តើកុមារងាយនឹងតូចចិត្តដែរឬទេ បើយើងផ្លាស់ប្តូរ ឬយកអ្វីមួយពីពួកគេ?", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_4"},
+            {"question": "តើកុមារតែងមានចំណាប់អារម្មណ៍ងប់និងអ្វីមួយដែរឬទេ? (ធើ្វអីធ្វើនឹង មិនរវល់ ឬតប)", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_5"},
+            {"question": "តើកុមារងាយប្តូរអារម្មណ៍តានតឹង ឬរំភើបពេលប៉ះ ចាប់ រងក្លិន រសជាតិ ឬសំឡេងអ្វីមួយដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_6"},
+            {"question": "តើកុមារពិបាកទំនាក់ទំនងសង្គមជាមួយមនុស្សដទៃទៀតដែរឬទេ? (និយាយត្រាប់តាម ឬឡងពាក្យ)", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_7"},
+            {"question": "តើកុមារមិនឱ្យកុមារផ្សេង ឬអ្នកដទែដែលមិនស្គាល់ប៉ះដៃ ឬរូបរាងកាយដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_8"},
+            {"question": "តើកុមារបង្ហាញការយល់ដឹងតិចតួចអំពីស្ថានភាពគ្រោះថ្នាក់ដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3_2", "unique_code": "Q3_2_9"},
+
+            {"question": "តើកុមារអាចដើរក្នុងផ្ទះ ឬក្រៅផ្ទះ និងឡើងជណ្តើរដោយខ្លួនឯងមិនចាំបាត់ជួយកាន់ដៃដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3_3", "unique_code": "Q3_3_1"},
+            {"question": "តើកុមារអាចធើ្វសកម្មភាព ដូចជារត់ ឬលោតបានដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3_3", "unique_code": "Q3_3_2"},
+            {"question": "តើកុមារមានការថមថយកម្លាំង ឬល្បឿនលំនឹងខ្លួន និងការសម្របសម្រួលសាច់ដុំដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3_3", "unique_code": "Q3_3_3"},
+            {"question": "តើកុមារប្រើរទេះរុញជាប្រចាំ ដោយខ្លួនឯងបានដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3_3", "unique_code": "Q3_3_4"},
+            {"question": "តើកុមារអាចឈរបានដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3_3", "unique_code": "Q3_3_5"},
+            {"question": "តើកុមារពិបាកបញ្ជាកាយសម្បទា ធើ្វចលនា និងចល័តទីដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3_3", "unique_code": "Q3_3_6"},
+            {"question": "តើកុមារមានការពិបាកគ្រប់ផ្នែកកាយសម្បទាទាំងអស់ដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3_3", "unique_code": "Q3_3_7"},
+            {"question": "តើកុមារមានសមត្ថភាពការពារក្បាល ក និងទីតាំងផ្សេងទៀតដោយខ្លួនឯងដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3_3", "unique_code": "Q3_3_8"},
+
+            # Mentally disabled
+            {"question": "តើកុមារមានអារម្មណ៍ពិបាកចិត្ត ឆាប់ខឹង ឆាប់ភ័យញ័រ ថប់បារម្ភ ឬតានតឹងខ្លាំងដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4_1", "unique_code": "Q4_1_1"},
+            {"question": "តើកុមារមានអារម្មណ៍ចង់បោកក្បាលខ្លួនឯងជាប្រចាំដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4_1", "unique_code": "Q4_1_2"},
+            {"question": "តើកុមារមានអារម្មណ៍ចង់នៅតែម្នាក់ឯង ឬខ្លាចគេងមកជិតដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4_1", "unique_code": "Q4_1_3"},
+            {"question": "តើកុមារមានអារម្មណ៍បោចទាញ ចង់វៃ ជេរប្រទេច បំផ្លិចបំផ្លាញជាញឹកញាប់ដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4_1", "unique_code": "Q4_1_4"},
+            {"question": "តើកុមារមានអារម្មណ៍ធុញទ្រាន់ខ្លាំង ឬក្តោបត្រចៀកជាញឹកញាប់ ពេលនរណាម្នាក់និយាយដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4_1", "unique_code": "Q4_1_5"},
+            {"question": "រៀងរាល់ពេលឃើញមនុស្សច្រើន តើកុមារយំខ្លាំងដែរឬទេ? (ទោះជាមនុស្សធ្លាប់ស្គាល់ឬជួបពីមុន)", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4_1", "unique_code": "Q4_1_6"},
+            {"question": "តើកុមារឧស្សាហ៍យំតែម្នាក់ឯង ដោយមិនមានមូលហេតុដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4_1", "unique_code": "Q4_1_7"},
+
+            {"question": "បើធៀបនឹងកុមារអាយុដំណាលគ្នា តើកុមារចេះប្រាប់ ឬបង្ហាញពីច្រមុះ មាត់ ត្រចៀក ឬភ្នែកដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4_2", "unique_code": "Q4_2_1"},
+            {"question": "បើធៀបនឹងកុមារអាយុដំណាលគ្នា តើកុមារអាចធើ្វតាមការប្រាប់ដែលសាមញ្ញៗ បានដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4_2", "unique_code": "Q4_2_2"},
+            {"question": "តើកុមារអាចស្គាល់ឈ្មោះសត្វ ដែលមនុស្សទូទៅស្គាល់ដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4_2", "unique_code": "Q4_2_3"},
+            {"question": "តើកុមាររៀបចំគំនិត ក្នុងការនិយាយ ឬសរសេរ តាមការប្រាប់ដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4_2", "unique_code": "Q4_2_4"},
+            {"question": "តើកុមារដឹងពីសកម្មភាពដែលត្រូវធើ្វតាមលំដាប់លំដោយ ដែលបានប្រាប់ដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4_2", "unique_code": "Q4_2_5"},
+            {"question": "តើកុមារអាចនិយាយអ្វីដែលបានកើតឡើងពីម្សិលមិញ ឬកន្លងមកបានដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4_2", "unique_code": "Q4_2_6"},
+            {"question": "តើការរៀនរបស់កុមារ ស្របតាមការលូតលាស់របស់កុមារដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4_2", "unique_code": "Q4_2_7"},
+
+            # Other disabilities
+            {"question": "តើកុមារធ្លាប់ប្រកាច់ ឬឆ្កួតជ្រូកក្នុងរយះពេល៣ខែចុងក្រោយដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5_1", "unique_code":"Q5_1_1"},
+            {"question": "តើកុមារធ្លាប់មានជំងឺប្រកាច់ ឬប្រកាច់បណ្តាលមកពីគ្រុនក្តៅខ្លាំងដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5_1", "unique_code": "Q5_1_2"},
+            {"question": "តើការប្រកាច់ ឬជំងឺឆ្កួតជ្រូកមិនអាចគ្រប់គ្រងបាន ទោះបីជាមានការព្យាបាលនៅមន្ទីរពេទ្យ និងការព្យាបាលដោយថ្នាំដែរឬទេ? (ចាំបាច់ត្រូវមានការបញ្ជាក់ពីមណ្ឌលសុខភាព)", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5_1", "unique_code": "Q5_1_3"},
+            {"question": "តើកុមារធ្លាប់បញ្ជូនទៅមន្ទីរពេទ្យ ៦ដង ឬលើសពីនេះ ដោយសារការប្រកាច់ ឬជំងឺឆ្កួតជ្រូកដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5_1", "unique_code": "Q5_1_4"},
+            {"question": "តើកុមារធ្លាប់ប្រកាច់ធើ្វឱ្យរបួសរាង្គកាយធ្ងន់ធ្ងរ ត្រូវព្យាបាលភ្លាមៗ ឬសម្រាកព្យាបាលនៅមន្ទីរពេទ្យដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5_1", "unique_code": "Q5_1_5"},
+            {"question": "តើកុមារធ្លាប់ប្រើថ្នាំសម្រាប់ការពារប្រកាច់ដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5_1", "unique_code": "Q5_1_6"},
+
+            {"question": "តើកុមារមានជំងឺរាំរៃ(លើសពី៦ខែ)ប្រចាំកាយដែរឬទេ?", "description": "ជំងឺរាំរៃ", "parent_code": "Q5_2", "unique_code": "Q5_2_1"},
+            {"question": "តើកុមារធ្លាប់មានរបួស ឬវះកាត់ធំសរីរាង្គខាងក្នុងដែរឬទេ?", "description": "ជំងឺរាំរៃ", "parent_code": "Q5_2", "unique_code": "Q5_2_2"},
+            {"question": "តើកុមារត្រូវការប្រើប្រាស់ថ្នាំព្យាបាលជាប្រចាំដែរឬទេ?", "description": "ជំងឺរាំរៃ", "parent_code": "Q5_2", "unique_code": "Q5_2_3"},
+            {"question": "តើជំងឺរបស់កុមារមានការឈឺចាប់ជាប្រចាំដែរឬទេ?", "description": "ជំងឺរាំរៃ", "parent_code": "Q5_2", "unique_code": "Q5_2_4"},
+            {"question": "តើកុមារត្រូវការពិគ្រោះយោបល់ និងព្យាបាលជាប្រចាំជាមួយគ្រូពេទ្យដែរឬទេ?", "description": "ជំងឺរាំរៃ", "parent_code": "Q5_2", "unique_code": "Q5_2_5"},
+            {"question": "តើកុមារអាចធើ្វចលនា ឬហាត់ប្រាណដោយខ្លួនឯងដែរឬទេ?", "description": "ជំងឺរាំរៃ", "parent_code": "Q5_2", "unique_code": "Q5_2_6"},
+            {"question": "តើជំងឺរបស់កុមារបានបង្កផលពិបាកដល់សកម្មភាពប្រចាំថ្ងៃរបស់កុមារដែរឬទេ?", "description": "ជំងឺរាំរៃ", "parent_code": "Q5_2", "unique_code": "Q5_2_7"},
+            {"question": "តើជំងឺរបស់កុមារបានប៉ះពាល់ដល់អារម្មណ៍របស់កុមារ (ខឹង មួរម៉ៅ ខ្លាច...) ដែរឬទេ?", "description": "ជំងឺរាំរៃ", "parent_code": "Q_5", "unique_code": "Q5_2_8"},
+
+            # Living environment
+            {"question": "ធៀបទៅនឹងកុមារដែលមានអាយុដំណាលគ្នា តើកុមារលេងជាមួយក្មេងដទៃដែរឬទេ?", "description": "សកម្មភាពសង្គម", "parent_code": "Q6_1", "unique_code": "Q6_1_1"},
+            {"question": "ធៀបជាមួយកុមារមានអាយុដំណាលគ្នា តើកុមារជាធម្មតាបង្ហាញការអាណិតដល់ក្មេងដទៃដែរឬទេ?", "description": "សកម្មភាពសង្គម", "parent_code": "Q6_1", "unique_code": "Q6_1_2"},
+
+            {"question": "តើមាននរណាម្នាក់ចាំជួយមើលកុមារធើ្វសកម្មភាពជាប្រចាំលើសពី៨ម៉ោងដែរឬទេ?", "description": "ជំនួយការ", "parent_code": "Q6_2", "unique_code": "Q6_2_1"},
+            {"question": "តើកុមារត្រូវការជំនួយបន្ថែមក្នុងសកម្មភាពប្រចាំថ្ងៃនៅផ្ទះ ឬក្រៅផ្ទះនៅពេលពួកគេធំឡើងដែរឬទេ?", "description": "ជំនួយការ", "parent_code": "Q6_2","unique_code":"Q6_2_2"},
+            {"question": "តើកុមារត្រូវការជំនួយក្នុងសកម្មភាពប្រចាំថ្ងៃដែរឬទេ?", "description": "ជំនួយការ", "parent_code": "Q6_2","unique_code": "Q6_2_3"},
+            {"question": "តើកុមារត្រូវការ ការជំនួយក្នុងសកម្មភាពប្រចាំថ្ងៃ (២៤/៧) ដែរឬទេ?", "description": "ជំនួយការ", "parent_code": "Q6_2","unique_code":"Q6_2_4"},
+            {"question": "តើនរណាជាអ្នកជួយកុមារក្នុងសកម្មភាពប្រចាំថ្ងៃ? សូមបញ្ជាក់", "description": "ជំនួយការ", "parent_code": "Q6_2","unique_code":"Q6_2_5"},
+            {"question": "ប្រសិនបើ កុមារតម្រូវការជំនួយសកម្មភាពប្រចាំថ្ងៃ តើអ្នកមើលថែទាំមានពេលវេលាគ្រប់គ្រាន់សម្រាប់ជួយកុមារដែរឬទេ?", "description": "ជំនួយការ", "parent_code": "Q6_2","unique_code":"Q6_2_6"},
+            {"question": "តើអ្នកគិតថាកុមារត្រូវការនរណាម្នាក់ជួយដល់ពួកគេ ទោះជាពួកគេធំឡើងដែរឬទេ", "description": "ជំនួយការ", "parent_code": "Q6_2","unique_code":"Q6_2_7"},
+            {"question": "តើកុមារពិបាកក្នុងការបរិភោគអាហារ ឬផឹកទឹកដែរឬទេ?", "description": "ជំនួយការ", "parent_code": "Q6_2","unique_code":"Q6_2_8"},
+
+            # Auxiliary equipment
+
+
+            #Age over 8 years old
+            # Physical disability
+            {"question": "តើអ្នកអាចប្រើមេដៃចាប់កាន់ ឬលើកវត្ថុអ្វីមួយបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1.1", "unique_code": "Q1.1.1"},
+            {"question": "តើអ្នកអាចប្រើម្រាមដៃរើសវត្ថុដាក់ ដោះឬបិទឡេវអាវបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1.1", "unique_code": "Q1.1.2"},
+            {"question": "តើអ្នកអាចបង្វិលកដៃទៅឆ្វេង ឬស្តាំបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1.1", "unique_code": "Q1.1.3"},
+            {"question": "តើអ្នកអាចបត់កែងដៃ ដោយដាក់ចុងដៃលើស្មាបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1.1", "unique_code": "Q1.1.4"},
+            {"question": "តើអ្នកអាចលើក ដាក់ ឬទាញ វត្ថុទម្ងន់ កន្លះគីឡូក្រាម ឬធ្ងន់ជាងនេះបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1.1", "unique_code":"Q1.1.5"},
+            {"question": "តើអ្នកអាចលើកដៃដាក់ទៅមុខត្រឹមភ្នែកខ្លួនឯងបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1.1", "unique_code": "Q1.1.6"},
+            {"question": "តើអ្នកអាចញាក់ ឬបង្វិលស្មាបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាលើ", "parent_code": "Q1.1", "unique_code": "Q1.1.7"},
+
+            {"question": "តើអ្នកអាចឈរឱ្យមានលំនឹងមួយកន្លែងលើសពី១០នាទីបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.1"},
+            {"question": "តើអ្នកអាចដើរលើបន្ទាត់ត្រង់លើសពី១០នាទីដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.2"},
+            {"question": "តើអ្នកអាចដើរ ចុងជើង ឬចង្អើតចុងជើងបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.3"},
+            {"question": "តើអ្នកអាចបង្វិលកជើង ទៅឆ្វេង ឬទៅស្តាំ ឡើង ឬចុះបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.4"},
+            {"question": "តើអ្នកអាចឡើងចុះកៅអីកម្ពស់៣តឹកបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.5"},
+            {"question": "តើអ្នកអាចឡើងចុះកាំជណ្តើរបានដែរឬទេ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.6"},
+            {"question": "តើអ្នកអាចឡើងចុះកាំជណ្តើរបានដែរឬទេ ពេលមានអ្នកជួយ ឬតោងយឺតបង្កាន់ដៃ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.7"},
+            {"question": "តើអ្នកអាចដើរដោយខ្លួនឯង ដោយគ្មានអ្នកជួយបានចម្ងាយប៉ុន្មានម៉ែត្រ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.8"},
+            {"question": "តើអ្នកអាចដើរបានប៉ុន្មានម៉ែត្រ ដោយប្រើឧបករណ៍ជំនួយ ឬមានអ្នកជួយ?", "description": "ពិបាកធើ្វចលនាក្រោម", "parent_code": "Q1.2", "unique_code": "Q1.2.9"},
+
+            {"question": "តើអ្នកដេកក្នុងសភាពចុះខ្សោយខ្លាំងដែរឬទេ?", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.1"},
+            {"question": "តើអ្នកអាចក្រោកអង្គុយដោយគ្មានជំនួយបានដែរឬទេ?", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.2"},
+            {"question": "តើអ្នកបាត់បង់មុខងារចលករមួយចំហៀងខ្លួនឆ្វេង ឬស្តាំសងខាងដែរឬទេ? (លើស៦ខែ)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.3"},
+            {"question": "តើដងខ្លួនរបស់អ្នកខូចទ្រង់ទ្រាយដែរឬទេ? (វៀច កោង គម ជាអចិន្រែ្តយ៍)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.4"},
+            {"question": "តើដងខ្លួន និងអវយវៈរបស់អ្នកញាក់ញ័រឬស្ពឹកខ្លាំងឬទេ? (លើស៦ខែ)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.5"},
+            {"question": "តើអ្នកធ្លាប់មានរបួសខួរឆ្អឹងខ្នងដែរឬទេ?", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.6"},
+            {"question": "តើអ្នកអាចប្រើមុខងារចលករត្រឹមចង្កេះចុះក្រោមដែរឬទេ? (លើស៦ខែ)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.7"},
+            {"question": "តើអ្នកឈឺចាប់ខ្លាំងជាប្រចាំត្រង់ក ចង្កេះ ឬដងខ្លួនដែរទេ? (ឈឺជាអចិន្រៃ្តយ៍)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.8"},
+            {"question": "តើអ្នកប្រើថ្នាំលេប ឬចាក់ជាប្រចាំដែរឬទេ? (លើស៦ខែ)", "description": "ពិបាកសម្របសម្រួលដងខ្លួន និងខ្នង", "parent_code": "Q1.3", "unique_code": "Q1.3.9"},
+
+            {"question": "តើអ្នកធ្លាប់មានការវះកាត់ធំលើសរីរាង្គខាងក្នុងដែរឬទេ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1.4", "unique_code": "Q1.4.1"},
+            {"question": "តើសរីរាង្គខាងក្នុងរបស់អ្នកធ្លាប់ឈឺចាប់ដែរឬទេ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1.4", "unique_code": "Q1.4.2"},
+            {"question": "តើអ្នកប្រើឧបករណ៍ជំនួយសរីរាង្គឬទេ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1.4", "unique_code": "Q1.4.3"},
+            {"question": "តើអ្នកប្រើថ្នាំពេទ្យដែរឬទេ សម្រាប់ជំងឺដែលបានវះកាត់ធំ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1.4", "unique_code": "Q1.4.4"},
+            {"question": "តើអ្នកអាចដើរ ឬលោតបានដែរឬទេចាប់តាំងពីក្រោយវះកាត់ធំ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1.4", "unique_code": "Q1.4.5"},
+            {"question": "តើអ្នកអាចមើលថែទាំអនាម័យខ្លួនឯង ឬរស់នៅដោយឯករាជ្យបានដែរឬទេ?", "description": "ពិការភាពសរីរាង្គខាងក្នុង", "parent_code": "Q1.4", "unique_code": "Q1.4.6"},
+
+
+            # Cognitive disability
+            {"question": "តើអ្នកអាចស្តាប់ឮដែរ ឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2.1", "unique_code": "Q2.1.1"},
+            {"question": "តើអ្នកមានប្រើឧបករណ៍ជំនួយការស្តាប់ជាប្រចាំដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2.1", "unique_code": "Q2.1.2"},
+            {"question": "បើខ្ញុំគោះប៊ិកលើបាតដៃរបស់ខ្ញុំ តើអ្នកស្តាប់ឮដែរឬទេ? (គោះស្តាំឆ្វេងពីមុខពីក្រោយ", "description": "ពិបាកស្តាប់", "parent_code": "Q2.1", "unique_code": "Q2.1.3"},
+            {"question": "តើអ្នកពិបាកស្តាប់ ឬយល់ពីនរណាម្នាក់និយាយដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2.1", "unique_code": "Q2.1.4"},
+            {"question": "តើអ្នកមានបញ្ហាក្នុងការស្តាប់វិទ្យុ ឬទូរទស្សន៍ដែរឬទេ? (ទោះបើកសំឡេងខ្លាំងៗក៏ដោយ)", "description": "ពិបាកស្តាប់", "parent_code": "Q2.1", "unique_code": "Q2.1.5"},
+            {"question": "តើអ្នកពិបាកស្តាប់ នៅពេលនរណាម្នាក់និយាយតិចៗដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2.1", "unique_code": "Q2.1.6"},
+            {"question": "តើអ្នកមានបញ្ហស្តាប់ដែលបណ្តាលឱ្យអ្នកប្រកែកជាមួយគេញឹកញាប់ដែរឬទេ?", "description": "ពិបាកស្តាប់", "parent_code": "Q2.1", "unique_code":"Q2.1.7"},
+
+            {"question": "តើអ្នកអាចនិយាយ ឬសន្ទនាបានដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2.2", "unique_code": "Q2.2.1"},
+            {"question": "តើអ្នកអាចនិយាយលើសពី៥០ពាក្យបានដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2.2", "unique_code":"Q2.2.2"},
+            {"question": "តើអ្នកប្រើភាសាសញ្ញា ឬភាសាកាយវិការដែរឬទេ ពេលនិយាយ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2.2", "unique_code": "Q2.2.3"},
+            {"question": "តើអ្នកពិបាក ក្នុងការនិយាយភាសាកំណើតរបស់ខ្លួនច្បាស់ដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2.2", "unique_code": "Q2.2.4"},
+            {"question": "តើអ្នកអាចនិយាយត្រាប់តាមបានដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2.2", "unique_code": "Q2.2.5"},
+            {"question": "តើអ្នកនិយាយ ដោយប្រើខ្យល់ច្រមុះ (ក្ងួរ) ដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2.2", "unique_code": "Q2.2.6"},
+            {"question": "តើអ្នកពិបាកនិយាយ ឬសន្ទនានៅក្នុងកន្លែង ឬបន្ទប់មានមនុស្សកកកុញដែរឬទេ?", "description": "ពិបាកនិយាយ", "parent_code": "Q2.2", "unique_code": "Q2.2.7"},
+
+            {"question": "តើអ្នកអាចមើលឃើញ ក្នុងបរិយាកាសធម្មតាដែរឬទេ?", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.1"},
+            {"question": "តើអ្នកអាចមើលឃើញច្បាស់ដែរឬទេ ទោះពាក់វ៉ែនតាក៏ដោយ?", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.2"},
+            {"question": "តើអ្នកអាចក្រឡេកមើលឃើញដៃរបស់គាត់ឃើញដែរឬទេ?", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.3"},
+            {"question": "តើអ្នកអាចធើ្វសញ្ញា ឬសកម្មភាពត្រាប់តាម ឬបញេ្ជញទឹកមុខតាមអ្នកដទៃបានដែរឬទេ?", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.4"},
+            {"question": "តើអ្នកព្រិចភ្នែកដែរឬទេ ពេលត្រូវពន្លឺ?", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.5"},
+            {"question": "តើអ្នកអាចមើលឃើញពណ៏ (បែតង ខៀវ ក្រហម លឿង) ដែរឬទេ?", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.6"},
+            {"question": "តើអ្នកអាចមើលឃើញម្រាមដៃច្បាស់ក្នុងចម្ងាយ៥ម៉ែត្រដែរឬទេ? (ទោះពាក់វ៉ែនតាក៏ដោយ)", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.7"},
+            {"question": "តើអ្នកអាចមើលម្រាមដៃច្បាស់ក្នុងចម្ងាយ៣ម៉ែត្រដែរឬទេ? (ទោះពាក់វ៉ែនតាក៏ដោយ)", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.8"},
+            {"question": "តើអ្នកអាចមើលឃើញម្រាមដៃច្បាស់ក្នុងចម្ងាយ៤០សង់ទីម៉ែត្របានដែរឬទេ? (ពាក់វ៉ែនតាក៏ដោយ)", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.9"},
+            {"question": "តើអ្នកអាចដើរទៅមុខ ដោយខ្លួនឯងបានដែរឬទេ? (ប្រើដៃ ដើម្បីរកផ្លូវដើរ)", "description": "ពិបាកមើល", "parent_code": "Q2.3", "unique_code": "Q2.3.10"},
+
+            # Intellectual disability
+            {"question": "តើអ្នកដេក ឬសរីរាង្គកាយ ពិសេសសាច់ដុំ ស្ថិតក្នុងសភាពចុះខ្សោយខ្លាំងដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.1"},
+            {"question": "តើអ្នកមានឥរិយាបថពិបាកសម្របខ្លួនជាមួយសង្គមដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.2"},
+            {"question": "តើអ្នកមានការនិយាយម្តងហើយម្តងទៀតឬរវើរវាយដែរឬទេ? (និយាយដដែលៗ)", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.3"},
+            {"question": "តើអ្នកនិយាយច្រើន ឬតិចតួចបំផុត ប៉ុន្តែពិបាកយល់ពីការប្រាស្រ័យទាក់ទងតាមពាក្យសម្តីដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.4"},
+            {"question": "តើអ្នកមានអាកប្បកិរិយារញ៉េរញ៉ៃ ឬចលនាម្តងទៅនេះម្តងទៅនោះដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.5"},
+            {"question": "តើអ្នកធ្លាប់រវើរវាយ ឬចង់ធ្វើនេះធើ្វនោះមិនធម្មតាដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.6"},
+            {"question": "តើអ្នកពិបាកនិយាយគ្នាលើរឿងតែមួយឬរក្សាការសន្ទនាគ្នាទៅវិញទៅមកដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.7"},
+            {"question": "តើអ្នកពិបាកក្នុងការយល់ដឹងពីអារម្មណ៍អ្នកដទៃដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.8"},
+            {"question": "តើអ្នកចូលចិត្តជជែកអំពីរឿងខ្លួនឯងជាងរឿងអ្នកដទៃដែរឬទេ?", "description": "ដោនស៊ីនដ្រូម", "parent_code": "Q3.1", "unique_code": "Q3.1.9"},
+
+            {"question": "តើអ្នកនិយាយតិចតួចហើយផ្តល់ចម្លើយមិនទាក់ទងទៅនិងសំណួរដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.1"},
+            {"question": "តើអ្នកមិនឆ្លើយតប បើហៅឈ្មោះចំៗ ឬគេចវេសពីការមើលភ្នែកដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.2"},
+            {"question": "តើអ្នកពិបាកយល់អំពីអារម្មណ៍របស់អ្នកដទៃដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.3"},
+            {"question": "តើអ្នកងាយនឹងខកចិត្តដែរឬទេ បើយើងផ្លាស់ប្តូរ ឬយកអ្វីមួយពីពួកគេ?", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.4"},
+            {"question": "តើអ្នកតែងមានចំណាប់អារម្មណ៍ងប់ងល់នឹងអ្វីមួយដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.5"},
+            {"question": "តើអ្នកងាយប្តូរអាម្មណ៍តានតឹង ឬរំភើប ពេលប៉ះ ចាប់ រងក្លិន រសជាតិ ឬសំឡេងអ្វីមួយដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.6"},
+            {"question": "តើអ្នកពិបាកទំនាក់ទំនងសង្គមជាមួយមនុស្សដទៃទៀតដែរឬទេ? (និយាយត្រាប់តាម ឬឡងពាក្យ)", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.7"},
+            {"question": "តើអ្នកមិនឱ្យអ្នកផ្សេង ឬអ្នកដទៃដែលមិនស្គាល់ប៉ះដៃ ឬរូបរាងកាយដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.8"},
+            {"question": "តើអ្នកបង្ហាញការយល់ដឹងតិចតួចអំពីស្ថានភាពគ្រោះថ្នាក់ដែរឬទេ?", "description": "អូទីស្សឹម", "parent_code": "Q3.2", "unique_code": "Q3.2.9"},
+
+            {"question": "តើអ្នកអាចដើរក្នុងផ្ទះ ឬក្រៅផ្ទះ និងឡើងជណ្តើរដោយខ្លួនឯងមិនចាំបាច់ជួយកាន់ដៃដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3.3", "unique_code": "Q3.3.1"},
+            {"question": "តើអ្នកអាចធើ្វសកម្មភាព ដូចជារត់ ឬលោតបានដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3.3", "unique_code": "Q3.3.2"},
+            {"question": "តើអ្នកមានការថមថយកម្លាំង ឬល្បឿនលំនឹង និងការសម្របសម្រួលសាច់ដុំដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3.3", "unique_code": "Q3.3.3"},
+            {"question": "តើអ្នកប្រើរទះរុញជាប្រចាំ ដោយខ្លួនឯងបានដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3.3", "unique_code": "Q3.3.4"},
+            {"question": "តើអ្នកអាចឈរបានដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3.3", "unique_code": "Q3.3.5"},
+            {"question": "តើអ្នកពិបាកបញ្ជាកាយសម្បទា ធើ្វចលនានិងចល័តទីដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3.3", "unique_code": "Q3.3.6"},
+            {"question": "តើអ្នកមានការពិបាកគ្រប់ផ្នែកកាយសម្បទាទាំងអស់ដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3.3", "unique_code": "Q3.3.7"},
+            {"question": "តើអ្នកមានសមត្ថភាពការពារក្បាល ក និងទីតាំងផ្សេងទៀតដោយខ្លួនឯងដែរឬទេ?", "description": "ពិការចលករខួរក្បាល(ស៊ីភី)", "parent_code": "Q3.3", "unique_code": "Q3.3.8"},
+
+            # Mentally disabled
+            {"question": "តើអ្នកមានអារម្មណ៍ពិបាកចិត្ត ឆាប់ខឹង ឆាប់ភ័យញ៍រ ថប់បារម្ភ ឬតានតឹងខ្លាំងដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.1"},
+            {"question": "តើអ្នកមានប្រើថ្នាំរម្ងាប់អារម្មណ៍ ឬថ្នាំសណ្តំដែររឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.2"},
+            {"question": "តើអ្នកមានអារម្មណ៍ចង់នៅតែម្នាក់ឯង ឬខ្លាចគេឯងមកជិតដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.3"},
+            {"question": "តើអ្នកមានអារម្មណ៍ចង់វ៉ៃ ជេរបញ្ជោរ ឬបំផ្លិតបំផ្លាញជាញឹកញាប់ដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.4"},
+            {"question": "តើអ្នកមានអារម្មណ៍ធុញទ្រាន់ខ្លាំង ឬក្តោបត្រចៀកជាញឹកញាប់នរណាម្នាក់និយាយដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.5"},
+            {"question": "តើអ្នកចូលចិត្តច្រៀងរាំតែម្នាក់ឯងដែរឬទេ? (ទោះពេលយប់ជ្រៅក៏ដោយ)", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.6"},
+            {"question": "តើអ្នកឆ្លើយតបដោយកំហឹង នៅពេលអ្នកមានអារម្មណ៍ថាត្រូវបានគេប្រមាថដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.7"},
+            {"question": "តើអ្នកមានអារម្មណ៍ភ័យព្រួយ ឬព្រួយបារម្ភខ្លាំង ហើយពិបាកគ្រប់គ្រងដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.8"},
+            {"question": "តើអ្នកធ្លាប់ឈឺចាប់ផ្លូវចិត្តខ្លាំង រយះពេលជាច្រើនខែ បន្ទាប់ពីការបាត់បង់អ្វីមួយដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.9"},
+            {"question": "តើអ្នកពិបាកផ្តោតអារម្មណ៍លើអ្វីផ្សេងក្រៅពីអ្នកជាទីស្រលាញ់ដែលបានបាត់បង់ដែរឬទេ?", "description": "ពិការផ្លូវចិត្ត", "parent_code": "Q4.1", "unique_code": "Q4.1.10"},
+
+            {"question": "តើអ្នកអាចចូលរួមរៀនសូត្រ ហើយពិបាកចងចាំខ្លាំងដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.1"},
+            {"question": "តើអ្នកធ្លាប់ភ្លេចអ្វីមួយដែលអ្នកទើបទុកដាក់ថ្មីៗដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.2"},
+            {"question": "តើអ្នកឧស្សាហ៍ភ្លេច ហើយសួរម្តងហើយ ម្តងទៀតដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.3"},
+            {"question": "តើអ្នកមានអារម្មណ៍ច្រឡំ ក្នុងអំឡុងពេលសន្ទនា ហើយត្រូវឈប់សិនដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.4"},
+            {"question": "តើអ្នកពិបាកចាំព្រឹត្តិការណ៍ ដូចជាថ្ងៃកំណើតខ្លួនឯងដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.5"},
+            {"question": "តើអ្នកឧស្សាហ៍បាត់បង់វត្ថុ និងមានអារម្មណ៍ថាគេលួចវត្ថុដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.6"},
+            {"question": "តើអ្នកមានការពិបាកក្នុងការចងចាំលើការអនុវត្តអនាម័យល្អដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.7"},
+            {"question": "តើអ្នកមានការផ្លាស់ប្តូរបុគ្គលិកលក្ខណៈជាញឹកញាប់ដែរឬទេ? (ឆាប់ខឹង អន្ទះសារ ....)", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.8"},
+            {"question": "តើអ្នកពិបាកចាំពាក្យដែលខ្លួនឯង ឬអ្នកដទៃនិយាយប្រាប់ពីរ បីនាទីមុនដែរឬទេ?", "description": "ពិបាកចងចាំ", "parent_code": "Q4.2", "unique_code": "Q4.2.9"},
+
+            # Other disabilities
+            {"question": "តើអ្នកធ្លាប់ប្រកាច់ ឬឆ្កួតជ្រូកក្នុងរយះពេល៣ខែចុងក្រោយដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5.1", "unique_code": "Q5.1.1"},
+            {"question": "តើអ្នកធ្លាប់ប្រកាច់ ឬប្រកាច់បណ្តោលមកពីគ្រុនក្តៅខ្លាំង ពេលនៅក្មេងដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5.1", "unique_code": "Q5.1.2"},
+            {"question": "តើការប្រកាច់ ឬជំងឺឆ្កួតជ្រូកមិនអាចគ្រប់គ្រងបាន ទោះបីជាមានការព្យាបាលនៅមន្ទីពេទ្យ និងការព្យាបាលដោយថ្នាំដែរឬទេ? (ចាំបាច់ត្រូវមានការបញ្ជាក់ពីណ្ឌលសុខភាព)", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5.1", "unique_code": "Q5.1.3"},
+            {"question": "តើអ្នកធ្លាប់បញ្ចូននៅមន្ទីរពេទ្យ ៦ដង ឬលើសពីនេះ ដោយសារការប្រកាច់ ឬជំងឺឆ្កួតជ្រូកដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5.1", "unique_code": "Q5.1.4"},
+            {"question": "តើអ្នកធ្លាប់ប្រកាច់ធ្វើឱ្យរបួសរាងកាយធ្ងន់ធ្ងរ ត្រូវព្យាបាលភ្លាមៗ ឬសម្រាកព្យាបាលនៅមន្ទីរពេទ្យដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5.1", "unique_code": "Q5.1.5"},
+            {"question": "តើអ្នកធ្លាប់ប្រើថ្នាំសម្រាប់ការពារប្រកាច់ដែរឬទេ?", "description": "ជំងឺរមួលសារពាង្គកាយមិនប្រក្រតី", "parent_code": "Q5.1", "unique_code": "Q5.1.6"},
+
+            {"question": "តើអ្នកមានជំងឺរាំរៃ(លើសពី៦ខែ)ប្រចាំកាយដែរឬទេ?", "description": "ពិការភាពផ្សេងៗ", "parent_code": "Q5.2", "unique_code": "Q5.2.1"},
+            {"question": "តើអ្នកធ្លាប់មានរបួស ឬវះកាត់ធំសរីរាង្គខាងក្នុងដែរឬទេ?", "description": "ពិការភាពផ្សេងៗ", "parent_code": "Q5.2", "unique_code": "Q5.2.2"},
+            {"question": "តើអ្នកត្រូវការប្រើប្រាស់ថ្នាំព្យាបាលជាប្រចាំដែរឬទេ?", "description": "ពិការភាពផ្សេងៗ", "parent_code": "Q5.2", "unique_code":"Q5.2.3"},
+            {"question": "តើជំងឺរបស់អ្នកមានការឈឺចាប់ជាប្រចាំដែរឬទេ?", "description": "ពិការភាពផ្សេងៗ", "parent_code": "Q5.2", "unique_code": "Q5.2.4"},
+            {"question": "តើអ្នកត្រូវការពិគ្រោះយោបល់ និងព្យាបាលជាប្រចាំជាមួយគ្រូពេទ្យដែរឬទេ?", "description": "ពិការភាពផ្សេងៗ", "parent_code": "Q5.2", "unique_code": "Q5.2.5"},
+            {"question": "តើអ្នកអាចធើ្វចលនា ឬហាត់ប្រាណដោយខ្លួនឯងដែរឬទេ?", "description": "ពិការភាពផ្សេងៗ", "parent_code": "Q5.2", "unique_code": "Q5.2.6"},
+            {"question": "តើជំងឺរបស់អ្នកបានបង្កផលពិបាកដល់សកម្មភាពប្រចាំរបស់អ្នកដែរឬទេ?", "description": "ពិការភាពផ្សេងៗ", "parent_code": "Q5.2", "unique_code": "Q5.2.7"},
+            {"question": "តើជំងឺរបស់អ្នកបានប៉ះពាល់ដល់អារម្មណ៍របស់អ្នក (ខឹង មួរម៉ៅ ខ្លាច...) ដែរឬទេ?", "description": "ពិការភាពផ្សេងៗ", "parent_code": "Q5.2", "unique_code": "Q5.2.8"},
+
+            # Living environment
+            {"question": "តើអ្នកពិបាកចូលរួមក្នុងសកម្មភាពរបស់សហគមន៍ដែរឬទេ?", "description": "សកម្មភាពសង្គម", "parent_code": "Q6.1", "unique_code": "Q6.1.1"},
+            {"question": "តើអ្នកអាចទៅផ្សារ ហាងទំនិញ ធនាគារឬសាលាឃុំ សង្កាត់ បានដោយងាយស្រួលដែរឬទេ?", "description": "សកម្មភាពសង្គម", "parent_code": "Q6.1", "unique_code": "Q6.1.2"},
+            {"question": "តើប្រភេទមធ្យោបាយធើ្វដំណើរអ្វី ដែលអ្នកប្រើប្រាស់?", "description": "សកម្មភាពសង្គម", "parent_code": "Q6.1", "unique_code": "Q6.1.3"},
+            {"question": "តើមធ្យោបាយធើ្វដំណើរឆ្លើយតបតាមតម្រូវការរបស់ជនមានពិការភាពដែរឬទេ?", "description": "សកម្មភាពសង្គម", "parent_code": "Q6.1", "unique_code": "Q6.1.4"},
+            {"question": "តើអ្នកជាអ្នកសម្រេចចិត្តដោយខ្លួនឯងអំពីសកម្មភាពប្រចាំថ្ងៃដែរឬទេ?", "description": "សកម្មភាពសង្គម", "parent_code": "Q6.1", "unique_code": "Q6.1.5"},
+            {"question": "តើអ្នកមានអារម្មណ៍ថាអ្នកដទៃមិនអោយតម្លៃឬមិនស្តាប់អ្វីដែលអ្នកនិយាយដែរឬទេ?", "description": "សកម្មភាពសង្គម", "parent_code": "Q6.1", "unique_code": "Q6.1.6"},
+
+            {"question": "តើអ្នកត្រូវការជំនួយការសម្រាប់សកម្មភាពប្រចាំថ្ងៃដែររទេ?", "description": "ជំនួយការ", "parent_code": "Q6.2", "unique_code": "Q6.2.1"},
+            {"question": "តើអ្នកត្រូវការ ការជំនួយក្នុងសកម្មភាពប្រចាំថ្ងៃ (២៤/៧) ដែរឬទេ?", "description": "ជំនួយការ", "parent_code": "Q6.2","unique_code": "Q6.2.2"},
+            {"question": "តើនរណាជាអ្នកជួយអ្នកក្នុងសកម្មភាពប្រចាំថ្ងៃ? សូមបញ្ជាក់", "description": "ជំនួយការ", "parent_code": "Q6.2","unique_code": "Q6.2.3"},
+            {"question": "ប្រសិនបើ អ្នកតម្រូវការជំនួយសកម្មភាពប្រចាំថ្ងៃ តើអ្នកមើលថែទាំមានពេលវេលាគ្រប់គ្រាន់សម្រាប់ជួយអ្នកដែរឬទេ?", "description": "ជំនួយការ", "parent_code": "Q6.2","unique_code": "Q6.2.4"},
+        ]
+        
+        inserted = 0
+        for item in QUESTION_DISABILITY_TYPES:
+            new_question = Question(
+                question=item["question"],
+                description=item["description"],
+                parent_code=item["parent_code"],
+                unique_code=item["unique_code"],
+                status=True,
+                created_by=created_by,
+                updated_by=created_by,
+            )
+            session.add(new_question)
+            inserted += 1
+
+        await session.commit()
+        logger.info(f"Disability-type questions seeding completed → {inserted} inserted")
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating disability questions: {str(e)}", exc_info=True)
+        raise
+
+
+# Answer of Disability-Type
+async def create_answer(session: AsyncSession) -> None:
+    try:
+        result = await session.execute(select(User.id).where(User.username == "gs_commune"))
+        admin_user = result.scalar_one_or_none()
+        created_by = admin_user if admin_user else None
+
+        ANSWER_DISABILITY_TYPES = [
+            # Under 8 years-old
+            {"answer": "គ្មានបញ្ហា", "description": "", "unique_code": "A1"},
+            {"answer": "ធើ្វបានខ្លះៗ", "description": "", "unique_code": "A2"},
+            {"answer": "ពិបាក ឬប្រើជំនួយ", "description": "", "unique_code": "A3"},
+            {"answer": "មិនអាចធើ្វបាន", "description": "", "unique_code": "A4"},
+            {"answer": "២៥០ម៉ែត្រឡើង", "description": "", "unique_code": "A5"},
+            {"answer": "ចន្លោះ៥០-២៥០ម៉ែត្រ", "description": "", "unique_code": "A6"},
+            {"answer": "៥០ម៉ែត្រចុះ", "description": "", "unique_code": "A7"},
+            {"answer": "មិនចុះខ្សោយ", "description": "", "unique_code": "A8"},
+            {"answer": "ខ្សោយតិចតួច", "description": "", "unique_code": "A9"},
+            {"answer": "ខ្សោយបង្គួរ", "description": "", "unique_code": "A10"},
+            {"answer": "ខ្សោយខ្លាំង", "description": "", "unique_code": "A11"},
+            {"answer": "តិចតួច", "description": "", "unique_code": "A12"},
+            {"answer": "បង្គួរ", "description": "", "unique_code": "A13"},
+            {"answer": "ខ្លាំង", "description": "", "unique_code": "A14"},
+            {"answer": "មិនធ្លាប់មាន", "description": "", "unique_code": "A15"},
+            {"answer": "ធ្លាប់មាន", "description": "", "unique_code": "A16"},
+            {"answer": "មិនដែល", "description": "", "unique_code": "A17"},
+            {"answer": "ម្តងម្តាល", "description": "", "unique_code": "A18"},
+            {"answer": "ញឹកញាប់", "description": "", "unique_code": "A19"},
+            {"answer": "ជាប្រចាំ", "description": "", "unique_code": "A20"},
+            {"answer": "មិនមាន", "description": "", "unique_code": "A21"},
+            {"answer": "មាន", "description": "", "unique_code": "A22"},
+            {"answer": "មិនត្រូវការ", "description": "", "unique_code": "A23"},
+            {"answer": "ត្រូវការ", "description": "", "unique_code": "A24"},
+
+            #Over 8 years-old
+            {"answer": "សាធារណះ", "description": "", "unique_code": "A25"},
+            {"answer": "មធ្យោបាយផ្ទាល់ខ្លួន", "description": "", "unique_code": "A26"},
+            {"answer": "គ្មានមធ្យោបាយធើ្វដំណើរ", "description": "", "unique_code": "A27"},
+            {"answer": "ទេ", "description": "", "unique_code": "A28"},
+            {"answer": "បាទ/ចាស", "description": "", "unique_code": "A29"},
+            {"answer": "តិចមានបញ្ហា", "description": "", "unique_code": "A30"},
+            {"answer": "ឪពុកម្តាយបង្កើតម្នាក់ ឬ ទាំងពីរ", "description": "", "unique_code": "A31"},
+            {"answer": "ឪពុកម្តាយចិញ្ចឹមម្នាក់ ឬ ទាំងពីរ", "description": "", "unique_code": "A32"},
+            {"answer": "ជីដូនជីតាបង្កើត", "description": "", "unique_code": "A33"},
+            {"answer": "បងប្អូនប្រុស/ស្រី", "description": "", "unique_code": "A34"},
+            {"answer": "សាច់ញាតិ", "description": "", "unique_code": "A35"},
+            {"answer": "មិនមែនសាច់ញាតិ", "description": "", "unique_code": "A36"},
+            {"answer": "អ្នកមើលថែអាជីព", "description": "", "unique_code": "A37"},
+            {"answer": "មានគ្រប់គ្រាន់", "description": "", "unique_code": "A38"},
+            {"answer": "មានភាគច្រើន", "description": "", "unique_code": "A39"},
+            {"answer": "ជួនមានជួនអត់", "description": "", "unique_code": "A40"},
+            {"answer": "សឹងតែមិនមានសោះ", "description": "", "unique_code": "A41"},
+            {"answer": "បើកភ្នែកខ្លះៗ", "description": "", "unique_code": "A42"},
+            {"answer": "បើកភ្នែកដោយពិបាក", "description": "", "unique_code": "A43"},
+            {"answer": "បិទភ្នែក", "description": "", "unique_code": "A44"},
+            {"answer": "មិនធ្លាប់", "description": "", "unique_code": "A45"},
+            {"answer": "ធ្លាប់", "description": "", "unique_code": "A46"},
+        ]
+        inserted = 0
+        for item in ANSWER_DISABILITY_TYPES:
+            # Create and insert using the model
+            new_type = Answer(
+                answer=item["answer"],
+                description=item["description"],
+                unique_code=item["unique_code"],
+                status=True,
+                created_by=created_by,
+                updated_by=created_by
+            )
+            session.add(new_type)
+            inserted += 1
+
+        await session.commit()
+        logger.info(f"Answer completed → {inserted} inserted")
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating disability types: {str(e)}", exc_info=True)
+        raise
+
+
+# Type of Sickness
+async def create_sickness(session: AsyncSession) -> None:
+    try:
+        result = await session.execute(select(User.id).where(User.username == "gs_commune"))
+        admin_user = result.scalar_one_or_none()
+        created_by = admin_user if admin_user else None
+
+        TYPE_SICKNESS = [
+            {"title": "ជំងឺឃ្លង់", "description": ""},
+            {"title": "ថ្លើម", "description": ""},
+            {"title": "មហារីក","description": ""},
+            {"title": "ដាច់សរសៃឈាមខួរក្បាល","description": ""},
+            {"title": "ឈាមក្រកក","description": ""},
+            {"title": "ផ្លូវដង្ហើមធ្ងន់ធ្ងរ","description": ""},
+            {"title": "ទឹកនោមផ្អែម","description": ""},
+            {"title": "បេះដូង","description": ""},
+            {"title": "ផ្សេងៗ","description": ""}
+        ]
+
+        insert = 0
+        for item in TYPE_SICKNESS:
+            #Create and Insert Using the model
+            new_type = Sickness(
+                title=item["title"],
+                description=item["description"],
+                status=True,
+                created_by=created_by,
+                updated_by=created_by
+            )
+            session.add(new_type)
+            insert += 1
+
+        await session.commit()
+        logger.info(f"Type Sickness -> {insert} inserted.")
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating disability types: {str(e)}", exc_info=True)
+        raise
+
+
+# Category-question
+async def create_category_question(session: AsyncSession) -> None:
+    try:
+        result = await session.execute(select(User.id).where(User.username == "gs_commune"))
+        admin_user = result.scalar_one_or_none()
+        created_by = admin_user if admin_user else None
+
+        CATEGORY_ANSWER = [
+            {"category": "ដៃស្តាំ" , "code": "C1", "child_code": "C1"},
+            {"category": "ដៃឆ្វេង" , "code": "C2", "child_code": "C2"},
+            {"category": "ដៃទាំងពីរ" , "code": "C3", "child_code": "C1_C2"},
+
+            {"category": "ជើងស្តាំ" , "code": "C4", "child_code": "C4"},
+            {"category": "ជើងឆ្វេង" , "code": "C5", "child_code": "C5"},
+            {"category": "ជើងទាំងពីរ" , "code": "C6", "child_code": "C4_C5"},
+
+            {"category": "ពាក់កណ្តាលខ្លួន" , "code": "C7", "child_code": "C7"},
+            {"category": "ចំហៀងឆ្វេង ឬស្តាំ" , "code": "C8", "child_code": "C8"},
+            {"category": "មួយតួខ្លួន" , "code": "C9", "child_code": "C7_C8"},
+
+            {"category": "ត្រចៀកស្តាំ" , "code": "C10", "child_code": "C10"},
+            {"category": "ត្រចៀកឆ្វេង" , "code": "C11", "child_code": "C11"},
+            {"category": "ត្រចៀកទាំងពីរ" , "code": "C12", "child_code": "C10_C11"},
+
+            {"category": "ភ្នែកស្តាំ" , "code": "C13", "child_code": "C13"},
+            {"category": "ភ្នែកឆ្វេង" , "code": "C14", "child_code": "C14"},
+            {"category": "ភ្នែកទាំងពីរ" , "code": "C15", "child_code": "C13_C14"},
+
+            {"category": "NULL" , "code": "C16", "child_code": "C16"},
+        ]
+        inserted = 0
+        for item in CATEGORY_ANSWER:
+            # Create and insert using the model
+            new_type = CategoryQuestion(
+                category=item["category"],
+                code=item["code"],
+                child_code=item["child_code"],
+                status=True,
+                created_by=created_by,
+                updated_by=created_by
+            )
+            session.add(new_type)
+            inserted += 1
+
+        await session.commit()
+        logger.info(f"Category-Question completed → {inserted} inserted")
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating Category-Question: {str(e)}", exc_info=True)
+        raise
+
+
+# Question-Answer-main_id
+# async def create_user_select(session: AsyncSession) -> None:
+#     """
+#     Insert a QuestionAnswer record into the database.
+#     The QA data is defined inside this function.
+#     """
+
+#     try:
+#         # -----------------------------
+#         #   Get admin user ID
+#         # -----------------------------
+#         result = await session.execute(
+#             select(User.id).where(User.username == settings.ADMIN_USERNAME)
+#         )
+#         admin_user = result.scalar_one_or_none()
+#         created_by = admin_user if admin_user else None
+
+#         # -----------------------------
+#         #   Define QA input inside the function
+#         # -----------------------------
+#         qa_input = {
+#             "main_id": 46,
+#             "question_code": "Q1_1_1",
+#             "answer_code": "A1",
+#             "category_code": "C3",
+#         }
+
+#          # -----------------------------
+#         #   Check if QA already exists
+#         # -----------------------------
+#         existing = await session.execute(
+#             select(QuestionAnswer.id).where(
+#                 (QuestionAnswer.main_id == qa_input["main_id"]) &
+#                 (QuestionAnswer.question_code == qa_input["question_code"]) &
+#                 (QuestionAnswer.answer_code == qa_input["answer_code"])
+#             )
+#         )
+#         if existing.scalar_one_or_none():
+#             logger.info(f"QuestionAnswer already exists, skipping: {qa_input}")
+#             return
+
+
+#         # -----------------------------
+#         #   Metadata and table
+#         # -----------------------------
+#         metadata = MetaData()
+#         qa_table = Table(
+#             "question_answer",
+#             metadata,
+#             Column("id", Integer, primary_key=True, autoincrement=True),
+#             Column("main_id", Integer, nullable=False),
+#             Column("question_code", String, nullable=False),
+#             Column("answer_code", String, nullable=False),
+#             Column("category_code", String, nullable=True),
+#             Column("status", Boolean, default=True),
+#             Column("created_by", Integer),
+#             Column("updated_by", Integer),
+#             Column("is_deleted", Boolean, default=False),
+#         )
+
+#         # -----------------------------
+#         #   Prepare data for insertion
+#         # -----------------------------
+#         qa_data = {
+#             "main_id": qa_input["main_id"],
+#             "question_code": qa_input["question_code"],
+#             "answer_code": qa_input["answer_code"],
+#             "category_code": qa_input.get("category_code"),
+#             "status": True,
+#             "created_by": created_by,
+#             "updated_by": created_by,
+#         }
+
+#         # -----------------------------
+#         #   Insert into DB
+#         # -----------------------------
+#         stmt = insert(qa_table).values(qa_data)
+
+#         async with async_engine.connect() as conn:
+#             await conn.execute(stmt)
+#             await conn.commit()
+
+#         logger.info(f"QuestionAnswer inserted successfully: {qa_input}")
+
+#     except Exception as e:
+#         logger.error(f"Error inserting QuestionAnswer: {e}")
+#         raise
+
+
+# Question-Answer-View
+async def create_question_answer_view(session: AsyncSession) -> None:
+    try:
+        result = await session.execute(select(User.id).where(User.username == "gs_commune"))
+        admin_user = result.scalar_one_or_none()
+        created_by = admin_user if admin_user else None
+
+        QUESTION_ANSWER_VIEW = {
+            # under 8 years old
+            "under_8_year_old": {
+                "Q1_1_1": ["A1", "A2", "A3", "A4"],
+                "Q1_1_2": ["A1", "A2", "A3", "A4"],
+                "Q1_1_3": ["A1", "A2", "A3", "A4"],
+                "Q1_1_4": ["A1", "A2", "A3", "A4"],
+                "Q1_1_5": ["A1", "A2", "A3", "A4"],
+                "Q1_1_6": ["A1", "A2", "A3", "A4"],
+                "Q1_1_7": ["A1", "A2", "A3", "A4"],
+
+                "Q1_2_1": ["A1", "A2", "A3", "A4"],
+                "Q1_2_2": ["A1", "A2", "A3", "A4"], 
+                "Q1_2_3": ["A1", "A2", "A3", "A4"],
+                "Q1_2_4": ["A1", "A2", "A3", "A4"],
+                "Q1_2_5": ["A1", "A2", "A3", "A4"],
+                "Q1_2_6":["A1", "A2", "A3", "A4"],
+                "Q1_2_7":["A1", "A2", "A3", "A4"],
+                "Q1_2_8": ["A5", "A6", "A7"],
+                "Q1_2_9": ["A5", "A6", "A7"],
+
+                "Q1_3_1": ["A8", "A9", "A10", "A11"],
+                "Q1_3_2": ["A1", "A2", "A3", "A4"],
+                "Q1_3_3": ["A1", "A2", "A3", "A4"],
+                "Q1_3_4": ["A1", "A12", "A13", "A14"],
+                "Q1_3_5": ["A1", "A12", "A13", "A14"],
+                "Q1_3_6": ["A15", "A16"],
+                "Q1_3_7": ["A1", "A2", "A3", "A4"],
+                "Q1_3_8": ["A17", "A18", "A19", "A20"],
+                "Q1_3_9": ["A17", "A18", "A19", "A20"],
+
+                "Q1_4_1": ["A45", "A46"],
+                "Q1_4_2": ["A17", "A18", "A19", "A20"],
+                "Q1_4_3": ["A17", "A18", "A19", "A20"],
+                "Q1_4_4": ["A17", "A18", "A19", "A20"],
+                "Q1_4_5": ["A1", "A2", "A3", "A4"],
+                "Q1_4_6": ["A1", "A2", "A3", "A4"],
+
+                "Q2_1_1": ["A1", "A2", "A3", "A4"],
+                "Q2_1_2": ["A17", "A18", "A19", "A20"],
+                "Q2_1_3": ["A1", "A2", "A3", "A4"],
+                "Q2_1_4": ["A1", "A2", "A3", "A4"],
+                "Q2_1_5": ["A1", "A2", "A3", "A4"],
+                "Q2_1_6": ["A1", "A2", "A3", "A4"],
+                "Q2_1_7": ["A1", "A2", "A3", "A4"],
+
+                "Q2_2_1": ["A1", "A2", "A3", "A4"],
+                "Q2_2_2": ["A1", "A2", "A3", "A4"],
+                "Q2_2_3": ["A1", "A2", "A3", "A4"],
+                "Q2_2_4": ["A1", "A2", "A3", "A4"],
+                "Q2_2_5": ["A1", "A2", "A3", "A4"],
+                "Q2_2_6": ["A1", "A12", "A13", "A14"],
+                "Q2_2_7": ["A1", "A2", "A3", "A4"],
+
+                "Q2_3_1": ["A1", "A2", "A3", "A4"],
+                "Q2_3_2": ["A1", "A2", "A3", "A4"],
+                "Q2_3_3": ["A1", "A2", "A3", "A4"],
+                "Q2_3_4": ["A1", "A2", "A3", "A4"],
+                "Q2_3_5": ["A1", "A2", "A3", "A4"],
+                "Q2_3_6": ["A1", "A2", "A3", "A4"],
+
+                "Q3_1_1": ["A1", "A2", "A3", "A4"],
+                "Q3_1_2": ["A17", "A18", "A19", "A20"],
+                "Q3_1_3": ["A17", "A18", "A19", "A20"],
+                "Q3_1_4": ["A17", "A18", "A19", "A20"],
+                "Q3_1_5": ["A17", "A18", "A19", "A20"],
+                "Q3_1_6": ["A17", "A18", "A19", "A20"],
+                "Q3_1_7": ["A17", "A18", "A19", "A20"],
+                "Q3_1_8": ["A17", "A18", "A19", "A20"],
+
+                "Q3_2_1": ["A17", "A18", "A19", "A20"],
+                "Q3_2_2": ["A17", "A18", "A19", "A20"],
+                "Q3_2_3": ["A17", "A18", "A19", "A20"],
+                "Q3_2_4": ["A17", "A18", "A19", "A20"],
+                "Q3_2_5": ["A17", "A18", "A19", "A20"],
+                "Q3_2_6": ["A17", "A18", "A19", "A20"],
+                "Q3_2_7": ["A17", "A18", "A19", "A20"],
+                "Q3_2_8": ["A17", "A18", "A19", "A20"],
+                "Q3_2_9": ["A17", "A18", "A19", "A20"],
+
+                "Q3_3_1": ["A1", "A2", "A3", "A4"],
+                "Q3_3_2": ["A1", "A2", "A3", "A4"],
+                "Q3_3_3": ["A1", "A2", "A3", "A4"],
+                "Q3_3_4": ["A1", "A2", "A3", "A4"],
+                "Q3_3_5": ["A1", "A2", "A3", "A4"],
+                "Q3_3_6": ["A1", "A2", "A3", "A4"],
+                "Q3_3_7": ["A1", "A2", "A3", "A4"],
+                "Q3_3_8": ["A1", "A2", "A3", "A4"],
+
+                "Q4_1_1": ["A17", "A18", "A19", "A20"],
+                "Q4_1_2": ["A17", "A18", "A19", "A20"],
+                "Q4_1_3": ["A17", "A18", "A19", "A20"],
+                "Q4_1_4": ["A17", "A18", "A19", "A20"],
+                "Q4_1_5": ["A17", "A18", "A19", "A20"],
+                "Q4_1_6": ["A17", "A18", "A19", "A20"],
+                "Q4_1_7": ["A17", "A18", "A19", "A20"],
+
+                "Q4_2_1": ["A1", "A2", "A3", "A4"],
+                "Q4_2_2": ["A1", "A2", "A3", "A4"],
+                "Q4_2_3": ["A1", "A2", "A3", "A4"],
+                "Q4_2_4": ["A1", "A2", "A3", "A4"],
+                "Q4_2_5": ["A1", "A2", "A3", "A4"],
+                "Q4_2_6": ["A1", "A2", "A3", "A4"],
+                "Q4_2_7": ["A1", "A2", "A3", "A4"],
+
+                "Q5_1_1": ["A15", "A16"],
+                "Q5_1_2": ["A15", "A16"],
+                "Q5_1_3": ["A17", "A18", "A19", "A20"],
+                "Q5_1_4": ["A15", "A16"],
+                "Q5_1_5": ["A17", "A18", "A19", "A20"],
+                "Q5_1_6": ["A17", "A18", "A19", "A20"],
+
+                "Q5_2_1": ["A21", "A22"],
+
+                "Q5_2_2": ["A15", "A16"],
+                "Q5_2_3": ["A17", "A18", "A19", "A20"],
+                "Q5_2_4": ["A17", "A18", "A19", "A20"],
+                "Q5_2_5": ["A17", "A18", "A19", "A20"],
+                "Q5_2_6": ["A1", "A2", "A3", "A4"],
+                "Q5_2_7": ["A17", "A18", "A19", "A20"],
+                "Q5_2_8": ["A17", "A18", "A19", "A20"],
+
+                "Q6_1_1": ["A1", "A2", "A3", "A4"],
+                "Q6_1_2": ["A1", "A2", "A3", "A4"],
+
+                "Q6_2_1": ["A21", "A22"],
+                "Q6_2_2": ["A23", "A24"],
+                "Q6_2_3": ["A23", "A24"],
+                "Q6_2_4": ["A23", "A24"],
+                "Q6_2_5": ["A21", "A31", "A32", "A33", "A34", "A35", "A36", "A37"],
+                "Q6_2_6": ["A38", "A39", "A40", "A41"],
+                "Q6_2_7": ["A23", "A24"],
+                "Q6_2_8": ["A21", "A22", "A23", "A24"]
+            },
+
+            #Over 8 years old
+            "over_8_year_old": {
+                "Q1.1.1": ["A1", "A2", "A3", "A4"],
+                "Q1.1.2": ["A1", "A2", "A3", "A4"],
+                "Q1.1.3": ["A1", "A2", "A3", "A4"],
+                "Q1.1.4": ["A1", "A2", "A3", "A4"],
+                "Q1.1.5": ["A1", "A2", "A3", "A4"],
+                "Q1.1.6": ["A1", "A2", "A3", "A4"],
+                "Q1.1.7": ["A1", "A2", "A3", "A4"],
+
+                "Q1.2.1": ["A1", "A2", "A3", "A4"],
+                "Q1.2.2": ["A1", "A2", "A3", "A4"],
+                "Q1.2.3": ["A1", "A2", "A3", "A4"],
+                "Q1.2.4": ["A1", "A2", "A3", "A4"],
+                "Q1.2.5": ["A1", "A2", "A3", "A4"],
+                "Q1.2.6": ["A1", "A2", "A3", "A4"],
+                "Q1.2.7": ["A1", "A2", "A3", "A4"],
+                "Q1.2.8": ["A5", "A6", "A7"],
+                "Q1.2.9": ["A5", "A6", "A7"],
+
+                "Q1.3.1": ["A8", "A9", "A10", "A11"],
+                "Q1.3.2": ["A1", "A2", "A3", "A4"],
+                "Q1.3.3": ["A1", "A2", "A3", "A4"],
+                "Q1.3.4": ["A1", "A12", "A13", "A14"],
+                "Q1.3.5": ["A1", "A12", "A13", "A14"],
+                "Q1.3.6": ["A15", "A16"],
+                "Q1.3.7": ["A1", "A2", "A3", "A4"],
+                "Q1.3.8": ["A17", "A18", "A19", "A20"],
+                "Q1.3.9": ["A17", "A18", "A19", "A20"],
+
+                "Q1.4.1": ["A45", "A46"],
+                "Q1.4.2": ["A17", "A18", "A19", "A20"],
+                "Q1.4.3": ["A17", "A18", "A19", "A20"],
+                "Q1.4.4": ["A17", "A18", "A19", "A20"],
+                "Q1.4.5": ["A1", "A2", "A3", "A4"],
+                "Q1.4.6": ["A1", "A2", "A3", "A4"],
+
+                "Q2.1.1": ["A1", "A2", "A3", "A4"],
+                "Q2.1.2": ["A17", "A18", "A19", "A20"],
+                "Q2.1.3": ["A1", "A2", "A3", "A4"],
+                "Q2.1.4": ["A1", "A2", "A3", "A4"],
+                "Q2.1.5": ["A1", "A2", "A3", "A4"],
+                "Q2.1.6": ["A1", "A2", "A3", "A4"],
+                "Q2.1.7": ["A1", "A2", "A3", "A4"],
+
+                "Q2.2.1": ["A1", "A2", "A3", "A4"],
+                "Q2.2.2": ["A1", "A2", "A3", "A4"],
+                "Q2.2.3": ["A1", "A2", "A3", "A4"],
+                "Q2.2.4": ["A1", "A2", "A3", "A4"],
+                "Q2.2.5": ["A1", "A2", "A3", "A4"],
+                "Q2.2.6": ["A1", "A12", "A13", "A14"],
+                "Q2.2.7": ["A1", "A2", "A3", "A4"],
+
+                "Q2.3.1": ["A1", "A2", "A3", "A4"],
+                "Q2.3.2": ["A1", "A2", "A3", "A4"],
+                "Q2.3.3": ["A1", "A2", "A3", "A4"],
+                "Q2.3.4": ["A1", "A2", "A3", "A4"],
+                "Q2.3.5": ["A1", "A2", "A3", "A4"],
+                "Q2.3.6": ["A1", "A2", "A3", "A4"],
+                "Q2.3.7": ["A1", "A2", "A3", "A4"],
+                "Q2.3.8": ["A1", "A2", "A3", "A4"],
+                "Q2.3.9": ["A1", "A2", "A3", "A4"],
+                "Q2.3.10": ["A1", "A2", "A3", "A4"],
+
+                "Q3.1.1": ["A1","A42", "A43", "A44"],
+                "Q3.1.2": ["A17", "A18", "A19", "A20"],
+                "Q3.1.3": ["A17", "A18", "A19", "A20"],
+                "Q3.1.4": ["A17", "A18", "A19", "A20"],
+                "Q3.1.5": ["A17", "A18", "A19", "A20"],
+                "Q3.1.6": ["A17", "A18", "A19", "A20"],
+                "Q3.1.7": ["A17", "A18", "A19", "A20"],
+                "Q3.1.8": ["A17", "A18", "A19", "A20"],
+                "Q3.1.9": ["A17", "A18", "A19", "A20"],
+
+                "Q3.2.1": ["A17", "A18", "A19", "A20"],
+                "Q3.2.2": ["A17", "A18", "A19", "A20"],
+                "Q3.2.3": ["A17", "A18", "A19", "A20"],
+                "Q3.2.4": ["A17", "A18", "A19", "A20"],
+                "Q3.2.5": ["A17", "A18", "A19", "A20"],
+                "Q3.2.6": ["A17", "A18", "A19", "A20"],
+                "Q3.2.7": ["A17", "A18", "A19", "A20"],
+                "Q3.2.8": ["A17", "A18", "A19", "A20"],
+                "Q3.2.9": ["A17", "A18", "A19", "A20"],
+
+                "Q3.3.1": ["A1", "A2", "A3", "A4"],
+                "Q3.3.2": ["A1", "A2", "A3", "A4"],
+                "Q3.3.3": ["A1", "A2", "A3", "A4"],
+                "Q3.3.4": ["A1", "A2", "A3", "A4"],
+                "Q3.3.5": ["A1", "A2", "A3", "A4"],
+                "Q3.3.6": ["A1", "A2", "A3", "A4"],
+                "Q3.3.7": ["A1", "A2", "A3", "A4"],
+                "Q3.3.8": ["A1", "A2", "A3", "A4"],
+
+                "Q4.1.1": ["A17", "A18", "A19", "A20"],
+                "Q4.1.2": ["A17", "A18", "A19", "A20"],
+                "Q4.1.3": ["A17", "A18", "A19", "A20"],
+                "Q4.1.4": ["A17", "A18", "A19", "A20"],
+                "Q4.1.5": ["A17", "A18", "A19", "A20"],
+                "Q4.1.6": ["A17", "A18", "A19", "A20"],
+                "Q4.1.7": ["A17", "A18", "A19", "A20"],
+                "Q4.1.8": ["A17", "A18", "A19", "A20"],
+                "Q4.1.9": ["A17", "A18", "A19", "A20"],
+                "Q4.1.10": ["A17", "A18", "A19", "A20"],
+
+                "Q4.2.1": ["A17", "A18", "A19", "A20"],
+                "Q4.2.2": ["A17", "A18", "A19", "A20"],
+                "Q4.2.3": ["A17", "A18", "A19", "A20"],
+                "Q4.2.4": ["A17", "A18", "A19", "A20"],
+                "Q4.2.5": ["A17", "A18", "A19", "A20"],
+                "Q4.2.6": ["A17", "A18", "A19", "A20"],
+                "Q4.2.7": ["A17", "A18", "A19", "A20"],
+                "Q4.2.8": ["A17", "A18", "A19", "A20"],
+                "Q4.2.9": ["A17", "A18", "A19", "A20"],
+
+                "Q5.1.1": ["A15", "A16"],
+                "Q5.1.2": ["A15", "A16"],
+                "Q5.1.3": ["A17", "A18", "A19", "A20"],
+                "Q5.1.4": ["A15", "A16"],
+                "Q5.1.5": ["A17", "A18", "A19", "A20"],
+                "Q5.1.6":  ["A17", "A18", "A19", "A20"],
+
+                "Q5.2.1": ["A21", "A22"],
+                "Q5.2.2": ["A15", "A16"],
+                "Q5.2.3": ["A17", "A18", "A19", "A20"],
+                "Q5.2.4": ["A17", "A18", "A19", "A20"],
+                "Q5.2.5": ["A17", "A18", "A19", "A20"],
+                "Q5.2.6": ["A1", "A2", "A3", "A4"],
+                "Q5.2.7": ["A17", "A18", "A19", "A20"],
+                "Q5.2.8": ["A17", "A18", "A19", "A20"],
+
+                "Q6.1.1": ["A1", "A2", "A3", "A4"],
+                "Q6.1.2": ["A1", "A2", "A3", "A4"],
+                "Q6.1.3": ["A25", "A26", "A27"],
+                "Q6.1.4": ["A28", "A29"],
+                "Q6.1.5": ["A30", "A12", "A3", "A4"],
+                "Q6.1.6": ["A17", "A18", "A19", "A20"],
+
+                "Q6.2.1": ["A23", "A24"],
+                "Q6.2.2": ["A23", "A24"],
+                "Q6.2.3": ["A21", "A31", "A32", "A33", "A34", ],
+                "Q6.2.4": ["A38", "A39", "A40", "A41"]
+            }
+        }
+
+        inserted = 0
+
+        # -----------------------------
+        #   Loop through age groups
+        # -----------------------------
+        for age_group, question_map in QUESTION_ANSWER_VIEW.items():
+
+            for question_code, answer_list in question_map.items():
+
+                # Resolve question_id once per question_code
+                question_result = await session.execute(
+                    select(Question.id).where(Question.unique_code == question_code).limit(1)
+                )
+                question_id = question_result.scalars().first()
+                if question_id is None:
+                    logger.warning(f"Question with code {question_code} not found, skipping")
+                    continue
+
+                for answer_code in answer_list:
+
+                    # Resolve answer_id
+                    answer_result = await session.execute(
+                        select(Answer.id).where(Answer.unique_code == answer_code).limit(1)
+                    )
+                    answer_id = answer_result.scalars().first()
+                    if answer_id is None:
+                        logger.warning(f"Answer with code {answer_code} not found, skipping")
+                        continue
+
+                    # -----------------------------
+                    #   Insert new row
+                    # -----------------------------
+                    row = QuestionAnswerView(
+                        question_id=question_id,
+                        answer_id=answer_id,
+                        age_group=age_group,
+                        question_code=question_code,
+                        answer_code=answer_code,
+                        status=True,
+                        created_by=created_by,
+                        updated_by=created_by,
+                    )
+
+                    session.add(row)
+                    inserted += 1
+
+        await session.commit()
+
+        logger.info(
+            f"QuestionAnswerView seeding completed → {inserted} inserted"
+        )
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating QuestionAnswerView: {e}")
+        raise
+
+
+# Category-question-view
+async def create_category_question_view(session: AsyncSession) -> None:
+    try:
+        result = await session.execute(select(User.id).where(User.username == "gs_commune"))
+        admin_user = result.scalar_one_or_none()
+        created_by = admin_user if admin_user else None
+
+        CATEGORY_QUESTION_VIEW = {
+            "under_8_year_old": {
+                # under 8 years old
+                "Q1_1_1": ["C1", "C2", "C3"],
+                "Q1_1_2": ["C1", "C2", "C3"],
+                "Q1_1_3": ["C1", "C2", "C3"],
+                "Q1_1_4": ["C1", "C2", "C3"],
+                "Q1_1_5": ["C1", "C2", "C3"],
+                "Q1_1_6": ["C1", "C2", "C3"],
+                "Q1_1_7": ["C1", "C2", "C3"],
+
+                "Q1_2_1": ["C4", "C5", "C6"],
+                "Q1_2_2": ["C4", "C5", "C6"],
+                "Q1_2_3": ["C4", "C5", "C6"],
+                "Q1_2_4": ["C4", "C5", "C6"],
+                "Q1_2_5": ["C4", "C5", "C6"],
+                "Q1_2_6": ["C4", "C5", "C6"],
+                "Q1_2_7": ["C4", "C5", "C6"],
+                "Q1_2_8": ["C16"],
+                "Q1_2_9": ["C16"],
+
+                "Q1_3_1": ["C16"],
+                "Q1_3_2": ["C7", "C8", "C9"],
+                "Q1_3_3": ["C16"],
+                "Q1_3_4": ["C7", "C8", "C9"],
+                "Q1_3_5": ["C7", "C8", "C9"],
+                "Q1_3_6": ["C16"],
+                "Q1_3_7": ["C16"],
+                "Q1_3_8": ["C16"],
+                "Q1_3_9": ["C16"],
+
+                "Q1_4_1": ["C16"],
+                "Q1_4_2": ["C16"],
+                "Q1_4_3": ["C16"],
+                "Q1_4_4": ["C16"],
+                "Q1_4_5": ["C16"],
+                "Q1_4_6": ["C16"],
+
+                "Q2_1_1": ["C16"],
+                "Q2_1_2": ["C10", "C11", "C12"],
+                "Q2_1_3": ["C10", "C11", "C12"],
+                "Q2_1_4": ["C10", "C11", "C12"],
+                "Q2_1_5": ["C10", "C11", "C12"],
+                "Q2_1_6": ["C10", "C11", "C12"],
+                "Q2_1_7": ["C10", "C11", "C12"],
+
+                "Q2_2_1": ["C16"],
+                "Q2_2_2": ["C16"],
+                "Q2_2_3": ["C16"],
+                "Q2_2_4": ["C16"],
+                "Q2_2_5": ["C16"],
+                "Q2_2_6": ["C16"],
+                "Q2_2_7": ["C16"],
+
+                "Q2_3_1": ["C13", "C14", "C15"],
+                "Q2_3_2": ["C13", "C14", "C15"],
+                "Q2_3_3": ["C13", "C14", "C15"],
+                "Q2_3_4": ["C13", "C14", "C15"],
+                "Q2_3_5": ["C13", "C14", "C15"],
+                "Q2_3_6": ["C13", "C14", "C15"],
+
+                "Q3_1_1": ["C16"],
+                "Q3_1_2": ["C16"],
+                "Q3_1_3": ["C16"],
+                "Q3_1_4": ["C16"],
+                "Q3_1_5": ["C16"],
+                "Q3_1_6": ["C16"],
+                "Q3_1_7": ["C16"],
+                "Q3_1_8": ["C16"],
+
+                "Q3_2_1": ["C16"],
+                "Q3_2_2": ["C16"],
+                "Q3_2_3": ["C16"],
+                "Q3_2_4": ["C16"],
+                "Q3_2_5": ["C16"],
+                "Q3_2_6": ["C16"],
+                "Q3_2_7": ["C16"],
+                "Q3_2_8": ["C16"],
+                "Q3_2_9": ["C16"],
+
+                "Q3_3_1": ["C16"],
+                "Q3_3_2": ["C16"],
+                "Q3_3_3": ["C16"],
+                "Q3_3_4": ["C16"],
+                "Q3_3_5": ["C16"],
+                "Q3_3_6": ["C16"],
+                "Q3_3_7": ["C16"],
+                "Q3_3_8": ["C16"],
+
+                "Q4_1_1": ["C16"],
+                "Q4_1_2": ["C16"],
+                "Q4_1_3": ["C16"],
+                "Q4_1_4": ["C16"],
+                "Q4_1_5": ["C16"],
+                "Q4_1_6": ["C16"],
+                "Q4_1_7": ["C16"],
+
+                "Q4_2_1": ["C16"],
+                "Q4_2_2": ["C16"],
+                "Q4_2_3": ["C16"],
+                "Q4_2_4": ["C16"],
+                "Q4_2_5": ["C16"],
+                "Q4_2_6": ["C16"],
+                "Q4_2_7": ["C16"],
+
+                "Q5_1_1": ["C16"],
+                "Q5_1_2": ["C16"],
+                "Q5_1_3": ["C16"],
+                "Q5_1_4": ["C16"],
+                "Q5_1_5": ["C16"],
+                "Q5_1_6": ["C16"],
+
+                "Q5_2_1": ["C16"],
+                "Q5_2_2": ["C16"],
+                "Q5_2_3": ["C16"],
+                "Q5_2_4": ["C16"],
+                "Q5_2_5": ["C16"],
+                "Q5_2_6": ["C16"],
+                "Q5_2_7": ["C16"],
+                "Q5_2_8": ["C16"],
+
+                "Q6_1_1": ["C16"],
+                "Q6_1_2": ["C16"],
+
+                "Q6_2_1": ["C16"],
+                "Q6_2_2": ["C16"],
+                "Q6_2_3": ["C16"],
+                "Q6_2_4": ["C16"],
+                "Q6_2_5": ["C16"],
+                "Q6_2_6": ["C16"],
+                "Q6_2_7": ["C16"],
+                "Q6_2_8": ["C16"]
+            },
+
+            "over_8_year_old": {
+                # Over 8 year old
+                "Q1.1.1": ["C1", "C2", "C3"],
+                "Q1.1.2": ["C1", "C2", "C3"],
+                "Q1.1.3": ["C1", "C2", "C3"],
+                "Q1.1.4": ["C1", "C2", "C3"],
+                "Q1.1.5": ["C1", "C2", "C3"],
+                "Q1.1.6": ["C1", "C2", "C3"],
+                "Q1.1.7": ["C1", "C2", "C3"],
+
+                "Q1.2.1": ["C4", "C5", "C6"],
+                "Q1.2.2": ["C4", "C5", "C6"],
+                "Q1.2.3": ["C4", "C5", "C6"],
+                "Q1.2.4": ["C4", "C5", "C6"],
+                "Q1.2.5": ["C4", "C5", "C6"],
+                "Q1.2.6": ["C4", "C5", "C6"],
+                "Q1.2.7": ["C4", "C5", "C6"],
+                "Q1.2.8": ["C16"],
+                "Q1.2.9": ["C16"],
+
+                "Q1.3.1": ["C16"],
+                "Q1.3.2": ["C7", "C8", "C9"],
+                "Q1.3.3": ["C16"],
+                "Q1.3.4": ["C7", "C8", "C9"],
+                "Q1.3.5": ["C7", "C8", "C9"],
+                "Q1.3.6": ["C16"],
+                "Q1.3.7": ["C16"],
+                "Q1.3.8": ["C16"],
+                "Q1.3.9": ["C16"],
+
+                "Q1.4.1": ["C16"],
+                "Q1.4.2": ["C16"],
+                "Q1.4.3": ["C16"],
+                "Q1.4.4": ["C16"],
+                "Q1.4.5": ["C16"],
+                "Q1.4.6": ["C16"],
+
+                "Q2.1.1": ["C16"],
+                "Q2.1.2": ["C10", "C11", "C12"],
+                "Q2.1.3": ["C10", "C11", "C12"],
+                "Q2.1.4": ["C10", "C11", "C12"],
+                "Q2.1.5": ["C10", "C11", "C12"],
+                "Q2.1.6": ["C10", "C11", "C12"],
+                "Q2.1.7": ["C10", "C11", "C12"],
+
+                "Q2.2.1": ["C16"],
+                "Q2.2.2": ["C16"],
+                "Q2.2.3": ["C16"],
+                "Q2.2.4": ["C16"],
+                "Q2.2.5": ["C16"],
+                "Q2.2.6": ["C16"],
+                "Q2.2.7": ["C16"],
+
+                "Q2.3.1": ["C13", "C14", "C15"],
+                "Q2.3.2": ["C13", "C14", "C15"],
+                "Q2.3.3": ["C13", "C14", "C15"],
+                "Q2.3.4": ["C13", "C14", "C15"],
+                "Q2.3.5": ["C13", "C14", "C15"],
+                "Q2.3.6": ["C13", "C14", "C15"],
+                "Q2.3.7": ["C13", "C14", "C15"],
+                "Q2.3.8": ["C13", "C14", "C15"],
+                "Q2.3.9": ["C13", "C14", "C15"],
+                "Q2.3.10": ["C13", "C14", "C15"],
+
+                "Q3.1.1": ["C16"],
+                "Q3.1.2": ["C16"],
+                "Q3.1.3": ["C16"],
+                "Q3.1.4": ["C16"],
+                "Q3.1.5": ["C16"],
+                "Q3.1.6": ["C16"],
+                "Q3.1.7": ["C16"],
+                "Q3.1.8": ["C16"],
+                "Q3.1.9": ["C16"],
+
+                "Q3.2.1": ["C16"],
+                "Q3.2.2": ["C16"],
+                "Q3.2.3": ["C16"],
+                "Q3.2.4": ["C16"],
+                "Q3.2.5": ["C16"],
+                "Q3.2.6": ["C16"],
+                "Q3.2.7": ["C16"],
+                "Q3.2.8": ["C16"],
+                "Q3.2.9": ["C16"],
+
+                "Q3.3.1": ["C16"],
+                "Q3.3.2": ["C16"],
+                "Q3.3.3": ["C16"],
+                "Q3.3.4": ["C16"],
+                "Q3.3.5": ["C16"],
+                "Q3.3.6": ["C16"],
+                "Q3.3.7": ["C16"],
+                "Q3.3.8": ["C16"],
+
+                "Q4.1.1": ["C16"],
+                "Q4.1.2": ["C16"],
+                "Q4.1.3": ["C16"],
+                "Q4.1.4": ["C16"],
+                "Q4.1.5": ["C16"],
+                "Q4.1.6": ["C16"],
+                "Q4.1.7": ["C16"],
+                "Q4.1.8": ["C16"],
+                "Q4.1.9": ["C16"],
+                "Q4.1.10": ["C16"],
+
+                "Q4.2.1": ["C16"],
+                "Q4.2.2": ["C16"],
+                "Q4.2.3": ["C16"],
+                "Q4.2.4": ["C16"],
+                "Q4.2.5": ["C16"],
+                "Q4.2.6": ["C16"],
+                "Q4.2.7": ["C16"],
+                "Q4.2.8": ["C16"],
+                "Q4.2.9": ["C16"],
+
+                "Q5.1.1": ["C16"],
+                "Q5.1.2": ["C16"],
+                "Q5.1.3": ["C16"],
+                "Q5.1.4": ["C16"],
+                "Q5.1.5": ["C16"],
+                "Q5.1.6": ["C16"],
+
+                "Q5.2.1": ["C16"],
+                "Q5.2.2": ["C16"],
+                "Q5.2.3": ["C16"],
+                "Q5.2.4": ["C16"],
+                "Q5.2.5": ["C16"],
+                "Q5.2.6": ["C16"],
+                "Q5.2.7": ["C16"],
+                "Q5.2.8": ["C16"],
+
+                "Q6.1.1": ["C16"],
+                "Q6.1.2": ["C16"],
+                "Q6.1.3": ["C16"],
+                "Q6.1.4": ["C16"],
+                "Q6.1.5": ["C16"],
+                "Q6.1.6": ["C16"],
+
+                "Q6.2.1": ["C16"],
+                "Q6.2.2": ["C16"],
+                "Q6.2.3": ["C16"],
+                "Q6.2.4": ["C16"],
+            }
+        }
+
+        inserted = 0
+
+        # -----------------------------
+        #   Loop Through Data
+        # -----------------------------
+        for age_group, mapping in CATEGORY_QUESTION_VIEW.items():
+
+            for question_code, category_list in mapping.items():
+
+                for category_code in category_list:
+
+                    # -----------------------------
+                    #   Insert New Row
+                    # -----------------------------
+                    row = CategoryQuestionView(
+                        age_group=age_group,
+                        question_code=question_code,
+                        category_question_code=category_code,
+                        status=True,
+                        created_by=created_by,
+                        updated_by=created_by,
+                    )
+
+                    session.add(row)
+                    inserted += 1
+
+        await session.commit()
+
+        logger.info(
+            f"CategoryQuestionView seeding completed → {inserted} inserted"
+        )
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating CategoryQuestionView: {e}")
+        raise
+
+
+
+
+async def main():
+    async with local_session() as session:
+        try:
+            # Clean all tables in correct order (child tables first, then parent tables)
+            logger.info("Starting table cleanup...")
+            
+            # Delete child tables first (those with foreign keys)
+            await session.execute(delete(QuestionAnswerView))
+            await session.execute(delete(CategoryQuestionView))
+            logger.info("View tables cleaned")
+            
+            # Delete parent tables
+            await session.execute(delete(Question))
+            await session.execute(delete(Answer))
+            await session.execute(delete(Sickness))
+            await session.execute(delete(CategoryQuestion))
+            await session.execute(delete(DisabilityType))
+            
+            await session.commit()
+            logger.info("All tables cleaned successfully")
+            
+            # Now create data in correct order
+            await create_disability_type(session)
+            await create_question(session)
+            await create_answer(session)
+            await create_sickness(session)
+            await create_category_question(session)
+            # await create_user_select(session)
+            await create_question_answer_view(session)
+            await create_category_question_view(session)
+            logger.info("🎉 script completed successfully!")
+        except Exception as e:
+            logger.error("❌ script failed.")
+            raise
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
