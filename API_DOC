@@ -1,0 +1,431 @@
+# PWD Record Update — External API Integration Guide
+
+> **Version:** 2.0  
+> **Date:** 2026-03-13  
+> **Audience:** External operator (ministry / provincial department)  
+
+---
+
+## Overview
+
+This API allows external operators to **update the status** of disability (PWD) records using the record's unique `SPID` and `disability_code`.
+
+You will be provided a dedicated Keycloak account for API access.
+
+---
+
+## 1. Credentials
+
+You will receive the following from the SPR team:
+
+| Credential        | Description                              | Example                          |
+|--------------------|------------------------------------------|----------------------------------|
+| `KEYCLOAK_URL`     | Keycloak token endpoint                  | `https://auth.example.com/realms/spr/protocol/openid-connect/token` |
+| `BASE_URL`         | API base URL                             | `https://api.example.com`        |
+| `CLIENT_ID`        | OAuth2 client ID                         | `spr-gateway-external`            |
+| `CLIENT_SECRET`    | OAuth2 client secret                     | _(provided securely)_            |
+| `USERNAME`         | Service account username                 | `pwd_external_user`              |
+| `PASSWORD`         | Service account password                 | _(provided securely)_            |
+
+> **Security**  
+> - Store all credentials in environment variables or a secrets vault.  
+> - Never expose them in client-side code, logs, or version control.  
+> - Contact SPR immediately if credentials are compromised.
+
+---
+
+## 2. Authentication
+
+### 2.1 Obtain Access Token
+
+Every API call requires a **Bearer token** from Keycloak.
+
+**Request:**
+
+```
+POST {KEYCLOAK_URL}
+Content-Type: application/x-www-form-urlencoded
+```
+
+| Field           | Value              |
+|-----------------|--------------------|
+| `grant_type`    | `password`         |
+| `client_id`     | Your CLIENT_ID     |
+| `client_secret` | Your CLIENT_SECRET |
+| `username`      | Your USERNAME      |
+| `password`      | Your PASSWORD      |
+
+**cURL example:**
+
+```bash
+curl -s -X POST "${KEYCLOAK_URL}" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password" \
+  -d "client_id=${CLIENT_ID}" \
+  -d "client_secret=${CLIENT_SECRET}" \
+  -d "username=${USERNAME}" \
+  -d "password=${PASSWORD}"
+```
+
+**Response — `200 OK`:**
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...",
+  "expires_in": 300,
+  "refresh_expires_in": 1800,
+  "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "Bearer"
+}
+```
+
+### 2.2 Use the Token
+
+```
+Authorization: Bearer <access_token>
+```
+
+### 2.3 Token Lifecycle
+
+| Token          | TTL      | When expired                                |
+|----------------|----------|---------------------------------------------|
+| Access token   | ~5 min   | Refresh using the refresh token (see below) |
+| Refresh token  | ~30 min  | Re-authenticate with username / password    |
+
+### 2.4 Refresh an Expired Token
+
+```bash
+curl -s -X POST "${KEYCLOAK_URL}" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=refresh_token" \
+  -d "client_id=${CLIENT_ID}" \
+  -d "client_secret=${CLIENT_SECRET}" \
+  -d "refresh_token=${REFRESH_TOKEN}"
+```
+
+---
+
+## 3. Update Record
+
+### 3.1 Endpoint
+
+```
+PUT {BASE_URL}/api/v1/Portals/approval/PWD
+Content-Type: application/json
+Authorization: Bearer <access_token>
+```
+
+### 3.2 Request Body (JSON)
+
+`spId`, `pwdNumber`, and `status` are **required**.
+
+| Field                   | Type   | Required | Description                            | ពិពណ៌នា                    |
+|-------------------------|--------|----------|----------------------------------------|---------------------------|
+| `spId`            | string | **Yes**  | Target status (see Section 3.4)        | ស្ថានភាព                   |
+| `pwdNumber`           | string | **Yes**       | Disability Code                   | លេខបណ្ណសមធម៏                  |
+| `status`           | string | **Yes**       | Request Status                   | ស្ថានភាពការអនុម័ត                  |
+
+### Example
+```json
+{
+    "spId": "3406182715",
+    "pwdNumber": "020203066399780",
+    "status": "approved"
+}
+
+```
+
+
+
+
+### 3.4 Allowed Status Values
+
+| Value               | Code   | Meaning (EN)                 | ពិពណ៌នា (KH)                         |
+|---------------------|--------|------------------------------|--------------------------------------|
+| `PWD_PENDING`       | PWD_P  | Pending at provincial level  | សំណើរងចាំពីមន្ទីរ                     |
+| `PWD_APPROVED`      | PWD_A  | Approved by ministry         | សំណើដែលបានអនុម័តពីក្រសួង              |
+| `PWD_MODIFIED`      | PWD_M  | Requires modification        | សំណើដែលត្រូវកែតម្រូវ                   |
+| `PWD_REINTERVIEWED` | PWD_R  | Requires re-interview        | សំណើដែលត្រូវសម្ភាសន៍ឡើងវិញ            |
+
+> Pass the **enum name** (e.g. `PWD_APPROVED`) as the `new_status` value.
+
+### 3.5 Success Response — `200 OK`
+
+```json
+{
+    "spId": "3406182715",
+    "pwdNumber": "020203066399780",
+    "status": "approved"
+}
+
+```
+
+---
+
+## 4. Error Reference
+
+| HTTP Code | Meaning              | Cause & Resolution                                                            |
+|-----------|----------------------|-------------------------------------------------------------------------------|
+| `401`     | Unauthorized         | Token missing, expired, or invalid. Obtain a new token (Section 2).           |
+| `403`     | Forbidden            | Account not authorized. Contact SPR team.                                     |
+| `404`     | Not Found            | No record matches the given `disability_code`. Verify the code.               |
+| `422`     | Unprocessable Entity | Invalid field value or missing `new_status`. Check request body.              |
+| `500`     | Internal Server Error| Server-side issue. Retry after a short delay. Contact SPR if persistent.      |
+
+**Error response format:**
+
+```json
+{
+  "detail": "Human-readable error message"
+}
+```
+
+---
+
+## 5. Complete Examples
+
+### 5.1 Update status only
+
+```bash
+curl -X PUT \
+  "${BASE_URL}/api/v1/main/status/PWD-2026-001234" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "new_status": "PWD_APPROVED"
+  }'
+```
+
+### 5.2 Update status + name + remarks
+
+```bash
+curl -X PUT \
+  "${BASE_URL}/api/v1/main/status/PWD-2026-001234" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "new_status": "PWD_MODIFIED",
+    "family_name": "សុខ",
+    "given_name": "ចាន់ថន",
+    "family_name_en": "Sok",
+    "given_name_en": "Chanthorn",
+    "remarks": "កែតម្រូវឈ្មោះ និង លេខទូរស័ព្ទ"
+  }'
+```
+
+### 5.3 Update all fields
+
+```bash
+curl -X PUT \
+  "${BASE_URL}/api/v1/main/status/PWD-2026-001234" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "new_status": "PWD_APPROVED",
+    "family_name": "សុខ",
+    "given_name": "ចាន់ថន",
+    "family_name_en": "Sok",
+    "given_name_en": "Chanthorn",
+    "phone_number": "0123456789",
+    "eq_card": "EQ-001234",
+    "dob": "1990-05-15",
+    "gender": "MALE",
+    "year_start_disability": "2020",
+    "remarks": "អនុម័តដោយក្រសួង"
+  }'
+```
+
+### 5.4 Python
+
+```python
+import httpx
+
+KEYCLOAK_URL = "https://auth.example.com/realms/spr/protocol/openid-connect/token"
+BASE_URL = "https://api.example.com"
+CLIENT_ID = "portal-pwd-external"
+CLIENT_SECRET = "your-client-secret"
+USERNAME = "pwd_external_user"
+PASSWORD = "your-password"
+
+
+def get_access_token() -> str:
+    response = httpx.post(
+        KEYCLOAK_URL,
+        data={
+            "grant_type": "password",
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "username": USERNAME,
+            "password": PASSWORD,
+        },
+    )
+    response.raise_for_status()
+    return response.json()["access_token"]
+
+
+def update_record(disability_code: str, payload: dict, token: str) -> dict:
+    response = httpx.put(
+        f"{BASE_URL}/api/v1/main/status/{disability_code}",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+# ── Usage ──
+token = get_access_token()
+
+# Status only
+result = update_record("PWD-2026-001234", {"new_status": "PWD_APPROVED"}, token)
+print(result)
+
+# Status + fields
+result = update_record(
+    "PWD-2026-005678",
+    {
+        "new_status": "PWD_MODIFIED",
+        "family_name": "សុខ",
+        "given_name": "វិចិត្រ",
+        "phone_number": "0987654321",
+        "remarks": "កែតម្រូវទិន្នន័យ",
+    },
+    token,
+)
+print(result)
+```
+
+### 5.5 JavaScript (Node.js / Fetch)
+
+```javascript
+const KEYCLOAK_URL = "https://auth.example.com/realms/spr/protocol/openid-connect/token";
+const BASE_URL = "https://api.example.com";
+const CLIENT_ID = "portal-pwd-external";
+const CLIENT_SECRET = "your-client-secret";
+const USERNAME = "pwd_external_user";
+const PASSWORD = "your-password";
+
+async function getAccessToken() {
+  const body = new URLSearchParams({
+    grant_type: "password",
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+    username: USERNAME,
+    password: PASSWORD,
+  });
+
+  const res = await fetch(KEYCLOAK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  if (!res.ok) throw new Error(`Auth failed: ${res.status}`);
+  return (await res.json()).access_token;
+}
+
+async function updateRecord(disabilityCode, payload, token) {
+  const res = await fetch(
+    `${BASE_URL}/api/v1/main/status/${disabilityCode}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+
+  return await res.json();
+}
+
+// ── Usage ──
+const token = await getAccessToken();
+
+// Status only
+const result1 = await updateRecord(
+  "PWD-2026-001234",
+  { new_status: "PWD_APPROVED" },
+  token
+);
+console.log(result1);
+
+// Status + fields
+const result2 = await updateRecord(
+  "PWD-2026-005678",
+  {
+    new_status: "PWD_MODIFIED",
+    family_name: "សុខ",
+    given_name: "វិចិត្រ",
+    phone_number: "0987654321",
+    remarks: "កែតម្រូវទិន្នន័យ",
+  },
+  token
+);
+console.log(result2);
+```
+
+---
+
+## 6. Best Practices
+
+| Practice                | Detail                                                                 |
+|-------------------------|------------------------------------------------------------------------|
+| **Cache tokens**        | Reuse the access token until it expires (~5 min). Don't request a new token per call. |
+| **Use refresh tokens**  | Refresh instead of re-authenticating with username/password each time. |
+| **Retry on 401**        | Get a fresh token and retry once.                                      |
+| **Send only changed fields** | Omit fields you don't want to change — only `new_status` is required. |
+| **Idempotent calls**    | Setting the same values twice is safe — no side effects.               |
+| **Rate limiting**       | Keep requests under 60/minute. Batch updates where possible.           |
+
+---
+
+## 7. Quick Reference Card
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  AUTHENTICATE                                                       │
+│  POST {KEYCLOAK_URL}                                                │
+│  Body: grant_type=password&client_id=...&username=...&...           │
+│  → access_token                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  UPDATE RECORD                                                      │
+│  PUT {BASE_URL}/api/v1/main/status/{disability_code}                │
+│  Header: Authorization: Bearer <access_token>                       │
+│  Body (JSON):                                                       │
+│    {                                                                │
+│      "\": "PWD_APPROVED",     ← required                  │
+│      "family_name": "សុខ",             ← optional                  │
+│      "given_name": "ចាន់ថន",           ← optional                  │
+│      "family_name_en": "Sok",          ← optional                  │
+│      "given_name_en": "Chanthorn",     ← optional                  │
+│      "phone_number": "0123456789",     ← optional                  │
+│      "eq_card": "EQ-001234",           ← optional                  │
+│      "dob": "1990-05-15",              ← optional                  │
+│      "gender": "MALE",                 ← optional                  │
+│      "year_start_disability": "2020",  ← optional                  │
+│      "remarks": "..."                  ← optional                  │
+│    }                                                                │
+├─────────────────────────────────────────────────────────────────────┤
+│  STATUS VALUES                                                      │
+│  PWD_PENDING       រងចាំពីមន្ទីរ                                      │
+│  PWD_APPROVED      អនុម័តពីក្រសួង                                     │
+│  PWD_MODIFIED      ត្រូវកែតម្រូវ                                       │
+│  PWD_REINTERVIEWED ត្រូវសម្ភាសន៍ឡើងវិញ                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 8. Support
+
+| Channel  | Contact                  |
+|----------|--------------------------|
+| Email    | _\<your-support-email\>_ |
+| Phone    | _\<your-support-phone\>_ |
