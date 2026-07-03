@@ -1,0 +1,175 @@
+
+
+{"question": "តើផ្ទះ បន្ទប់ទឹក បង្គន់ បង្កភាពងាយស្រួល ក្នុងការរស់នៅរាល់ថ្ងៃរបស់អ្នកដែរឬទេ?", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.1"},
+{"question": "តើអ្នកត្រូវការប្រើឧបករណ៍ជំនួយ ថ្នាំពេទ្យទាំងនេះដែរឬទេ?", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.2"},
+
+
+
+
+# Answer of Disability-Type
+        ANSWER_DISABILITY_TYPES = [
+            # Under 8 years-old
+            {"answer": "គ្មានបញ្ហា", "description": "", "unique_code": "A1"},
+            {"answer": "ធើ្វបានខ្លះៗ", "description": "", "unique_code": "A2"},
+            {"answer": "ពិបាក ឬប្រើជំនួយ", "description": "", "unique_code": "A3"},
+            {"answer": "មិនអាចធើ្វបាន", "description": "", "unique_code": "A4"},
+            {"answer": "លើសពី២៥០ម៉ែត្រ", "description": "", "unique_code": "A5"},
+            {"answer": "ចន្លោះ៥០-២៥០ម៉ែត្រ", "description": "", "unique_code": "A6"},
+            {"answer": "ក្រោម៥០ម៉ែត្រ", "description": "", "unique_code": "A7"},
+            {"answer": "មិនចុះខ្សោយ", "description": "", "unique_code": "A8"},
+            {"answer": "ខ្សោយតិចតួច", "description": "", "unique_code": "A9"},
+            {"answer": "ខ្សោយបង្គួរ", "description": "", "unique_code": "A10"},
+            {"answer": "ខ្សោយខ្លាំង", "description": "", "unique_code": "A11"},
+            {"answer": "តិចតួច", "description": "", "unique_code": "A12"},
+            {"answer": "បង្គួរ", "description": "", "unique_code": "A13"},
+            {"answer": "ខ្លាំង", "description": "", "unique_code": "A14"},
+            {"answer": "មិនធ្លាប់មាន", "description": "", "unique_code": "A15"},
+            {"answer": "ធ្លាប់មាន", "description": "", "unique_code": "A16"},
+            {"answer": "មិនដែល", "description": "", "unique_code": "A17"},
+            {"answer": "ម្តងម្តាល", "description": "", "unique_code": "A18"},
+            {"answer": "ញឹកញាប់", "description": "", "unique_code": "A19"},
+            {"answer": "ជាប្រចាំ", "description": "", "unique_code": "A20"},
+
+            {"answer": "មិនមាន", "description": "", "unique_code": "A21"},
+            {"answer": "មាន", "description": "", "unique_code": "A22"},
+            {"answer": "មិនត្រូវការ", "description": "", "unique_code": "A23"},
+            {"answer": "ត្រូវការ", "description": "", "unique_code": "A24"},
+
+            #Over 8 years-old
+            {"answer": "សាធារណៈ", "description": "", "unique_code": "A25"},
+            {"answer": "មធ្យោបាយផ្ទាល់ខ្លួន", "description": "", "unique_code": "A26"},
+            {"answer": "គ្មានមធ្យោបាយធើ្វដំណើរ", "description": "", "unique_code": "A27"},
+            {"answer": "ទេ", "description": "", "unique_code": "A28"},
+            {"answer": "បាទ/ចាស", "description": "", "unique_code": "A29"},
+            {"answer": "តិចមានបញ្ហា", "description": "", "unique_code": "A30"},
+            {"answer": "ឪពុកម្តាយបង្កើតម្នាក់ ឬ ទាំងពីរ", "description": "", "unique_code": "A31"},
+            {"answer": "ឪពុកម្តាយចិញ្ចឹមម្នាក់ ឬ ទាំងពីរ", "description": "", "unique_code": "A32"},
+            {"answer": "ជីដូនជីតាបង្កើត", "description": "", "unique_code": "A33"},
+            {"answer": "បងប្អូនប្រុស ឬស្រី", "description": "", "unique_code": "A34"},
+            {"answer": "សាច់ញាតិ", "description": "", "unique_code": "A35"},
+            {"answer": "មិនមែនសាច់ញាតិ", "description": "", "unique_code": "A36"},
+            {"answer": "អ្នកមើលថែអាជីព", "description": "", "unique_code": "A37"},
+            {"answer": "មានគ្រប់គ្រាន់", "description": "", "unique_code": "A38"},
+            {"answer": "មានភាគច្រើន", "description": "", "unique_code": "A39"},
+            {"answer": "ជួនមានជួនអត់", "description": "", "unique_code": "A40"},
+            {"answer": "សឹងតែមិនមានសោះ", "description": "", "unique_code": "A41"},
+            {"answer": "បើកភ្នែកខ្លះៗ", "description": "", "unique_code": "A42"},
+            {"answer": "បើកភ្នែកដោយពិបាក", "description": "", "unique_code": "A43"},
+            {"answer": "បិទភ្នែក", "description": "", "unique_code": "A44"},
+            {"answer": "មិនធ្លាប់", "description": "", "unique_code": "A45"},
+            {"answer": "ធ្លាប់", "description": "", "unique_code": "A46"},
+            {"answer": "មិនត្រូវការ (ទៅសំណួរទី៨)", "description": "", "unique_code": "A47"},
+            {"answer": "មិនមាន (រំលងទៅសំណួរទី៨)", "description": "", "unique_code": "A48"},
+        ]
+
+
+
+##########
+create new table call Auxiliary_equipment table
+id, equipment, description, status, created_by, updated_by
+
+
+##########
+[
+    {"equipment": "ឈើច្រត់ ឬដំបូង"},
+    {"equipment": "ឈើច្រត់ត្បៀតក្លៀក"},
+    {"equipment": "រណបដៃ ជើង ឬឆ្អឹងខ្នង"},
+    {"equipment": "ខ្នើយទ្រាប់ជំនួយមានសម្ពាធខ្យល់"},
+    {"equipment": "ដៃ ឬជើងសិប្បនិម្មិត"},
+    {"equipment": "រទេះទប់ឈរ ឬរំកិល"},
+    {"equipment": "ស៊ុមបញ្ឈរ ឧបករណ៍លៃតម្រូវបាន"},
+    {"equipment": "រទេះមានកង់បី"},
+    {"equipment": "ស្បែកជើងព្យាបាលជើងខ្វេរ"},
+    {"equipment": "ស៊ុមទប់ពេលដើរ"},
+    {"equipment": "រទេះរុញ"},
+    {"equipment": "វ៉ែនតាមើលជិត ឆ្ងាយ ឬការពារភ្នែក"},
+    {"equipment": "ឈើរាវផ្លូវ"},
+    {"equipment": "ឧបករណ៍ជំនួយក្នុងការស្តាប់"},
+    {"equipment": "ប្រើថ្នាំព្យាបាលជំងឺទឹកនោមផ្អែម"},
+    {"equipment": "ប្រើថ្នាំព្យាបាលប្រព័ន្ធប្រាសាទ"},
+    {"equipment": "ប្រើថ្នាំព្យាបាលជំងឺឆ្អឹងខ្នង"},
+    {"equipment": "ប្រើប្រាស់បច្ចេកវិទ្យាទំនាក់ទំនង"},
+    {"equipment": "ផ្សេងៗទៀត..."},
+]
+
+
+
+{"title": "ឧបករណ៍ជំនួយ", "code": "Q6_3", "description": "បរិស្ថានរស់នៅ", "parent_code": "Q6", "image": "ឧបករណ៍ជំនួយ.png"},
+{"question": "តើផ្ទះ បន្ទប់ទឹក បង្គន់ បង្កភាពងាយស្រួល ក្នុងការរស់នៅរាល់ថ្ងៃរបស់អ្នកដែរឬទេ?", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.1"},
+
+
+
+{"answer": "មិនងាយស្រួល", "description": "", "unique_code": "A49"},
+{"answer": "ងាយស្រួល", "description": "", "unique_code": "A50"},
+
+{"category": "NULL" , "code": "C16", "child_code": "C16"},
+
+
+
+
+{"question": "ឈើច្រត់ ឬដំបង", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.2"},
+{"question": "ឈើច្រត់ត្បៀតក្លៀក", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.3"},
+{"question": "រណបដៃ ជើង ឬឆ្អឹងខ្នង", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.4"},
+{"question": "ខ្នើយទ្រាប់ជំនួយមានសម្ពាធខ្យល់", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.5"},
+{"question": "ដៃ ឬ ជើងសិប្បនិម្មិត", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.6"},
+{"question": "រទេះទប់ឈរ ឬរំកិល", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.7"},
+{"question": "ស៊ុមបញ្ឈរ ឧបករណ៍លៃតម្រូវការ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.8"},
+{"question": "រទេះមានកង់បី", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.9"},
+{"question": "ស្បែកជើងព្យាបាលជើងខ្វៃ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.10"},
+{"question": "ស៊ុមទប់ពេលដើរ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.11"},
+{"question": "រទេះរុញ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.12"},
+{"question": "វ៉ែនតាមើលជិត ឆ្ងាយ ឬការពារភ្នែក", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.13"},
+{"question": "ឈើរាវផ្លូវ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.14"},
+{"question": "ឧបករណ៍ជំនួយក្នុងការស្តាប់", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.15"},
+{"question": "ប្រើថ្នាំព្យាបាលជំងឺទឹកនោមផ្អែម", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.16"},
+{"question": "ប្រើថ្នាំព្យាបាលប្រព័ន្ធប្រាសាទ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.17"},
+{"question": "ប្រើថ្នាំព្យាបាលជំងឺឆ្អឹងខ្នង", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.18"},
+{"question": "ប្រើប្រព័ន្ធបច្ចេកវិទ្យាទំនាក់ទំនង", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.19"},
+{"question": "ផ្សេងៗទៀត............", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6.3.20"},
+
+
+{"answer": "មិនត្រូវការប្រើ", "description": "", "unique_code": "A51"},
+{"answer": "ត្រូវការប្រើ", "description": "", "unique_code": "A52"},
+
+
+ {"question": "ឈើច្រត់ ឬដំបង", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_1"},
+            {"question": "ឈើច្រត់ត្បៀតក្លៀក", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_2"},
+            {"question": "រណបដៃ ជើង ឬឆ្អឹងខ្នង", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_3"},
+            {"question": "ខ្នើយទ្រាប់ជំនួយមានសម្ពាធខ្យល់", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_4"},
+            {"question": "ដៃ ឬ ជើងសិប្បនិម្មិត", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_5"},
+            {"question": "រទេះទប់ឈរ ឬរំកិល", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_6"},
+            {"question": "ស៊ុមបញ្ឈរ ឧបករណ៍លៃតម្រូវការ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_7"},
+            {"question": "រទេះមានកង់បី", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_8"},
+            {"question": "ស្បែកជើងព្យាបាលជើងខ្វៃ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_9"},
+            {"question": "ស៊ុមទប់ពេលដើរ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_10"},
+            {"question": "រទេះរុញ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_11"},
+            {"question": "វ៉ែនតាមើលជិត ឆ្ងាយ ឬការពារភ្នែក", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_12"},
+            {"question": "ឈើរាវផ្លូវ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_13"},
+            {"question": "ឧបករណ៍ជំនួយក្នុងការស្តាប់", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3.14"},
+            {"question": "ប្រើថ្នាំព្យាបាលជំងឺទឹកនោមផ្អែម", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_15"},
+            {"question": "ប្រើថ្នាំព្យាបាលប្រព័ន្ធប្រាសាទ", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_16"},
+            {"question": "ប្រើថ្នាំព្យាបាលជំងឺឆ្អឹងខ្នង", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_17"},
+            {"question": "ប្រើប្រព័ន្ធបច្ចេកវិទ្យាទំនាក់ទំនង", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3.18"},
+            {"question": "ផ្សេងៗទៀត............", "description": "ឧបករណ៍ជំនួយ", "parent_code": "Q6_3","unique_code": "Q6_3_19"},
+
+
+
+ "Q6_3_1": ["A51", "A52"],
+"Q6_3_2": ["A51", "A52"],
+"Q6_3_3": ["A51", "A52"],
+"Q6_3_4": ["A51", "A52"],
+"Q6_3_5": ["A51", "A52"],
+"Q6_3_6": ["A51", "A52"],
+"Q6_3_7": ["A51", "A52"],
+"Q6_3_8": ["A51", "A52"],
+"Q6_3_9": ["A51", "A52"],
+"Q6_3_10": ["A51", "A52"],
+"Q6_3_11": ["A51", "A52"],
+"Q6_3_12": ["A51", "A52"],
+"Q6_3_13": ["A51", "A52"],
+"Q6_3_14": ["A51", "A52"],
+"Q6_3_15": ["A51", "A52"],
+"Q6_3_16": ["A51", "A52"],
+"Q6_3_17": ["A51", "A52"],
+"Q6_3_18": ["A51", "A52"],
+"Q6_3_19": ["A51", "A52"],
