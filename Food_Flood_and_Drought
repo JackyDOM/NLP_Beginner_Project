@@ -1,0 +1,218 @@
+
+@router.get("/food-security-score")
+def get_food_security_score(
+    db: Session = Depends(get_db),
+    user_claims = Depends(check_resource_access("portal-gbsp"))
+):
+    """
+    Get average household food insecurity score by baseline, midline, endline.
+    Score range: 0-10 (lower is better)
+    """
+
+    periods = [
+        {
+            "name": "baseline",
+            "type": EnrollmentInterviewType.BASELINE,
+            "food_question": "q7",
+            "meal_question": "q8",
+            "coping_question": "q9"
+        },
+        {
+            "name": "midline",
+            "type": EnrollmentInterviewType.MIDLINE,
+            "food_question": "q4.4",
+            "meal_question": "q3",
+            "coping_question": "q9"
+        },
+        {
+            "name": "endline",
+            "type": EnrollmentInterviewType.ENDLINE,
+            "food_question": "",
+            "meal_question": "",
+            "coping_question": ""
+        }
+    ]
+    result = []
+    for period in periods:
+        interviews = (db.query(models.EnrollmentInterview)
+            .filter(
+                models.EnrollmentInterview.interview_type == period["type"]
+            )
+            .all()
+        )
+        household_scores = []
+        for interview in interviews:
+            data = interview.data_json or {}
+            food_score = calculate_food_frequency_score(data.get(period["food_question"]))
+            meal_score = calculate_meal_score(data.get(period["meal_question"]))
+            coping_score = calculate_coping_score(data.get(period["coping_question"]))
+
+            # Combine household score
+            #
+            # q7/q4.4 maximum:
+            # 14 foods x 7 days = 98
+            #
+            # Convert food frequency into 0-10
+            #
+
+            normalized_food_score = ((food_score / 98) * 10 if food_score > 0 else 0)
+            household_score = (normalized_food_score + meal_score + coping_score) / 3
+            household_scores.append(household_score)
+        average_score = (sum(household_scores) / len(household_scores) if household_scores else None)
+        result.append({
+            "name": period["name"],
+            "total_households": len(interviews),
+            "average_score": round(average_score, 2)
+            if average_score is not None
+            else None
+        })
+    return {
+        "data": result
+    }
+
+def calculate_food_frequency_score(answer):
+    """
+    Calculate q7/q4.4 food frequency.
+    Return total food days.
+    """
+    total = 0
+    if isinstance(answer, dict):
+        for item in answer.values():
+            if isinstance(item, dict):
+                for key, value in item.items():
+                    if "number_of_days" in key:
+                        total += int(value or 0)
+    return total
+
+def calculate_meal_score(answer):
+    """
+    Calculate meal reduction score.
+    """
+    if isinstance(answer, dict):
+        value = answer.get("value")
+        if str(value) == "1":
+            return 10
+    return 0
+
+def calculate_coping_score(answer):
+    """
+    Calculate food coping strategy score.
+    """
+    if isinstance(answer, dict):
+        value = answer.get("value")
+        if value:
+            return 10
+    return 0
+
+
+
+@router.get("/perceived-coping-capacity-score")
+def get_perceived_coping_capacity_score(
+    db: Session = Depends(get_db),
+    user_claims = Depends(check_resource_access("portal-gbsp"))
+):
+    """
+    Get average household perceived coping capacity score by baseline, midline, endline.
+    Score range: 1-4 (higher is better, self-reported).
+    Also returns % of households that received early warning info, where available.
+    """
+
+    periods = [
+        {
+            "name": "baseline",
+            "type": EnrollmentInterviewType.BASELINE,
+            "coping_capacity_question": "q41",
+            "early_warning_question": "q42",
+        },
+        {
+            "name": "midline",
+            "type": EnrollmentInterviewType.MIDLINE,
+            "coping_capacity_question": "q37",
+            "early_warning_question": "q38",
+        },
+        {
+            "name": "endline",
+            "type": EnrollmentInterviewType.ENDLINE,
+            "coping_capacity_question": "",
+            "early_warning_question": "",
+        }
+    ]
+    result = []
+    for period in periods:
+        interviews = (db.query(models.EnrollmentInterview)
+            .filter(
+                models.EnrollmentInterview.interview_type == period["type"]
+            )
+            .all()
+        )
+
+        coping_scores = []
+        early_warning_yes = 0
+        early_warning_total = 0
+
+        for interview in interviews:
+            data = interview.data_json or {}
+
+            raw_score = extract_coping_capacity_value(data.get(period["coping_capacity_question"]))
+            if raw_score is not None:
+                coping_scores.append(raw_score)
+
+            warning_answer = extract_early_warning_value(data.get(period["early_warning_question"]))
+            if warning_answer is not None:
+                early_warning_total += 1
+                if warning_answer == 1:
+                    early_warning_yes += 1
+
+        average_score = (
+            round(sum(coping_scores) / len(coping_scores), 2)
+            if coping_scores else None
+        )
+        early_warning_pct = (
+            round((early_warning_yes / early_warning_total) * 100, 1)
+            if early_warning_total else None
+        )
+
+        result.append({
+            "name": period["name"],
+            "total_households": len(interviews),
+            "average_score": average_score,
+            "early_warning_pct": early_warning_pct,
+        })
+
+    return {
+        "data": result
+    }
+
+
+def extract_coping_capacity_value(answer):
+    """
+    Extract raw q41/q37 value (1-4 scale, self-perceived coping capacity).
+    Returns None if missing/invalid, so it's excluded from the average
+    rather than dragging it toward 0.
+    """
+    if isinstance(answer, dict):
+        value = answer.get("value")
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return None
+        if 1 <= value <= 4:
+            return value
+    return None
+
+
+def extract_early_warning_value(answer):
+    """
+    Extract raw q42/q38 value (1=yes, 2=no).
+    Returns None if missing/invalid, so it's excluded from the percentage
+    rather than counted as "no".
+    """
+    if isinstance(answer, dict):
+        value = answer.get("value")
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return None
+        if value in (1, 2):
+            return value
+    return None
