@@ -1,0 +1,237 @@
+# the code of formula.ts (src -> lib -> formula.ts)
+// import type { FoodItem, FoodConsumptionResponse } from '@/lib/api/overview';
+
+// // ============ Food Consumption / Food Security ============
+
+// // ---- q7: Food frequency ----
+// // Sums number_of_days across all 14 food categories (max 14 x 7 = 98),
+// // normalized to a 0-10 scale.
+
+// export function calculateFoodFrequencyScore(
+//   foodItems: FoodItem[] | undefined | null
+// ): number {
+//   if (!Array.isArray(foodItems)) return 0;
+//   return foodItems.reduce((total, item) => total + (item.number_of_days || 0), 0);
+// }
+
+// export function normalizeFoodScore(foodScore: number): number {
+//   return foodScore > 0 ? (foodScore / 98) * 10 : 0;
+// }
+
+// // ---- q8: Meal frequency (ate fewer than 2 meals) ----
+// // ASSUMPTION: binary flag (0 = did not skip meals, 1 = skipped meals).
+// // Inverted so higher = better, consistent with the other two components.
+// // If this is actually a day-count (0-7) in your data, this needs to change.
+
+// export function normalizeMealScore(ateFewerThan2Meals: number | undefined | null): number {
+//   const flag = ateFewerThan2Meals ? 1 : 0;
+//   return (1 - flag) * 10;
+// }
+
+// /// ---- q9: Coping behaviors ----
+// // Normalized against the max number of distinct coping-behavior codes
+// // actually observed in the dataset, rather than a hardcoded guess.
+// // This assumes codes are the full set of options used in the survey
+// // (i.e. every valid code appears at least once across all households).
+// // If you have the official codebook/instrument, replace this with that
+// // fixed number instead — it will be more accurate than inferring from data.
+
+// export function getMaxCopingBehaviors(data: FoodConsumptionResponse): number {
+//   let maxCode = 0;
+//   for (const row of data.rows) {
+//     if (!Array.isArray(row.coping_behaviors)) continue;
+//     for (const code of row.coping_behaviors) {
+//       const n = Number(code);
+//       if (!Number.isNaN(n) && n > maxCode) maxCode = n;
+//     }
+//   }
+//   return maxCode > 0 ? maxCode : 1; // avoid divide-by-zero if data is empty
+// }
+
+// export function normalizeCopingScore(
+//   copingBehaviors: string[] | undefined | null,
+//   maxCopingBehaviors: number
+// ): number {
+//   if (!Array.isArray(copingBehaviors) || copingBehaviors.length === 0) return 10; // no coping behaviors = best score
+//   const count = Math.min(copingBehaviors.length, maxCopingBehaviors);
+//   return (1 - count / maxCopingBehaviors) * 10;
+// }
+
+// // ---- Combined household + average score ----
+// // household_score = (foodScore + mealScore + copingScore) / 3
+// // Scale: 0-10, HIGHER = more food secure (better).
+
+// export function computeHouseholdScore(
+//   row: FoodConsumptionResponse['rows'][number],
+//   maxCopingBehaviors: number
+// ): number {
+//   const foodScore = normalizeFoodScore(calculateFoodFrequencyScore(row.food_items));
+//   const mealScore = normalizeMealScore(row.ate_fewer_than_2_meals);
+//   const copingScore = normalizeCopingScore(row.coping_behaviors, maxCopingBehaviors);
+//   return (foodScore + mealScore + copingScore) / 3;
+// }
+
+// export function computeAvgFoodConsumptionScore(
+//   data: FoodConsumptionResponse
+// ): number | null {
+//   if (!data.rows.length) return null;
+
+//   const maxCopingBehaviors = getMaxCopingBehaviors(data);
+//   const householdScores = data.rows.map((row) =>
+//     computeHouseholdScore(row, maxCopingBehaviors)
+//   );
+//   const total = householdScores.reduce((sum, score) => sum + score, 0);
+//   return total / householdScores.length;
+// }
+
+===============================================================================
+// overview.ts
+// export interface FoodConsumptionResponse {
+//   interview_type: string;
+//   total_enrollments: number;
+//   rows: FoodConsumptionRow[];
+// }
+
+// export async function fetchFoodConsumptionBaseline(): Promise<FoodConsumptionResponse> {
+//   const res = await apiClient.get<FoodConsumptionResponse>(
+//     "/monitor/baseline/food-consumption",
+//   );
+//   return res.data;
+// }
+
+// export async function fetchFoodConsumptionMidline(): Promise<FoodConsumptionResponse> {
+//   const res = await apiClient.get<FoodConsumptionResponse>(
+//     "/monitor/midline/food-consumption",
+//   );
+//   return res.data;
+// }
+
+// export async function fetchFoodConsumptionEndline(): Promise<FoodConsumptionResponse> {
+//   const res = await apiClient.get<FoodConsumptionResponse>(
+//     "/monitor/endline/food-consumption",
+//   );
+//   return res.data;
+// }
+
+// // Average Score = Total of all household scores / Number of households====
+
+
+=================================
+// page.ts
+
+  // fetchFoodConsumptionMidline,
+  // fetchFoodConsumptionEndline,
+  // FoodConsumptionResponse,
+  // fetchCopingCapacityScore,
+  // fetchFoodConsumptionBaseline,
+  // type CopingCapacityPeriod,
+// import { computeAvgFoodConsumptionScore } from "@/lib/formula";
+-------------------------------------------------------------------------------------------------
+  // --- Live stat: food consumption score (baseline only, for now) ---
+  // const [foodConsumptionData, setFoodConsumptionData] =
+  //   useState<FoodConsumptionResponse | null>(null);
+  // const [foodConsumptionError, setFoodConsumptionError] = useState<
+  //   string | null
+  // >(null);
+
+  // const [foodConsumptionMidlineData, setFoodConsumptionMidlineData] =
+  //   useState<FoodConsumptionResponse | null>(null);
+  // const [foodConsumptionMidlineError, setFoodConsumptionMidlineError] =
+  //   useState<string | null>(null);
+
+  // const [foodConsumptionEndlineData, setFoodConsumptionEndlineData] =
+  //   useState<FoodConsumptionResponse | null>(null);
+  // const [foodConsumptionEndlineError, setFoodConsumptionEndlineError] =
+  //   useState<string | null>(null);
+-------------------------------------------------------------------------------------------------
+   // const loadFoodConsumptionScore = async () => {
+    //   try {
+    //     const data = await fetchFoodConsumptionBaseline();
+    //     if (isMounted) {
+    //       setFoodConsumptionData(data);
+    //     }
+    //   } catch (err) {
+    //     console.error("Failed to fetch food consumption data:", err);
+    //     if (isMounted) {
+    //       setFoodConsumptionError("---");
+    //     }
+    //   }
+    // };
+
+    // const loadFoodConsumptionMidlineScore = async () => {
+    //   try {
+    //     const data = await fetchFoodConsumptionMidline();
+    //     if (isMounted) {
+    //       setFoodConsumptionMidlineData(data);
+    //     }
+    //   } catch (err) {
+    //     console.error("Failed to fetch food consumption midline data:", err);
+    //     if (isMounted) {
+    //       setFoodConsumptionMidlineError("---");
+    //     }
+    //   }
+    // };
+
+    // const loadFoodConsumptionEndlineScore = async () => {
+    //   try {
+    //     const data = await fetchFoodConsumptionEndline();
+    //     if (isMounted) {
+    //       setFoodConsumptionEndlineData(data);
+    //     }
+    //   } catch (err) {
+    //     console.error("Failed to fetch food consumption endline data:", err);
+    //     if (isMounted) {
+    //       setFoodConsumptionEndlineError("---");
+    //     }
+    //   }
+    // };
+-------------------------------------------------------------------------------------------------
+    // loadCopingCapacityScore()
+    // loadFoodConsumptionScore();
+    // loadFoodConsumptionMidlineScore();
+    // loadFoodConsumptionEndlineScore();
+-------------------------------------------------------------------------------------------------
+  // const negativeCoping = [
+  //   { name: t.soldProductiveAssets, baseline: 45, endline: 12 },
+  //   { name: t.reducedAdultMeals, baseline: 62, endline: 18 },
+  //   { name: t.reducedChildMeals, baseline: 30, endline: 8 },
+  //   { name: t.tookHighInterestLoan, baseline: 55, endline: 20 },
+  // ];
+-------------------------------------------------------------------------------------------------
+  // const avgFoodConsumptionScore = foodConsumptionData
+  //   ? computeAvgFoodConsumptionScore(foodConsumptionData)
+  //   : null;
+
+  // const avgFoodConsumptionMidlineScore = foodConsumptionMidlineData
+  //   ? computeAvgFoodConsumptionScore(foodConsumptionMidlineData)
+  //   : null;
+
+  // const avgFoodConsumptionEndlineScore = foodConsumptionEndlineData
+  //   ? computeAvgFoodConsumptionScore(foodConsumptionEndlineData)
+  //   : null;
+-------------------------------------------------------------------------------------------------
+  // const foodInsecurityTrend = [
+  //   {
+  //     stage: stageLabels["baseline"],
+  //     score:
+  //       avgFoodConsumptionScore !== null
+  //         ? Number(avgFoodConsumptionScore.toFixed(2))
+  //         : null,
+  //   },
+  //   {
+  //     stage: stageLabels["midline"],
+  //     score:
+  //       avgFoodConsumptionMidlineScore !== null
+  //         ? Number(avgFoodConsumptionMidlineScore.toFixed(2))
+  //         : null,
+  //   },
+  //   {
+  //     stage: stageLabels["endline"],
+  //     score:
+  //       avgFoodConsumptionEndlineScore !== null
+  //         ? Number(avgFoodConsumptionEndlineScore.toFixed(2))
+  //         : null,
+  //   },
+  // ];
+-------------------------------------------------------------------------------------------------
+
