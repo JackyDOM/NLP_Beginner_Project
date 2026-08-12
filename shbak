@@ -1,0 +1,524 @@
+// export interface BreadwinnerRow {
+//   enrollment_id: number;
+//   breadwinner_count: number;
+// }
+
+// export interface BreadwinnerCountResponse {
+//   interview_type: string;
+//   total_enrollments: number;
+//   rows: BreadwinnerRow[];
+// }
+
+// export async function fetchBreadwinnerCount(): Promise<BreadwinnerCountResponse> {
+//   const res = await apiClient.get<BreadwinnerCountResponse>(
+//     "/monitor/baseline/breadwinner-count",
+//   );
+//   return res.data;
+// }
+
+// /**
+//  * Computes the average breadwinner_count across all fetched rows.
+//  * Returns null if there are no rows to average.
+//  */
+// export function computeAvgBreadwinnerCount(
+//   data: BreadwinnerCountResponse,
+// ): number | null {
+//   if (!data.rows.length) return null;
+//   const sum = data.rows.reduce(
+//     (acc, row) => acc + (row.breadwinner_count ?? 0),
+//     0,
+//   );
+//   return sum / data.rows.length;
+// }
+
+// Income-Sources
+// export interface IncomeSources {
+//   enrollment_id: number;
+//   salary_income: String;
+//   agri_selling_income: String;
+//   cattle_selling_income: String;
+//   remittance_income: String;
+//   micro_biz_income: String;
+//   rental_income: String;
+//   loan_income: String;
+//   pension_income: String;
+//   other_income: String;
+//   number_of_income_sources: number;
+// }
+
+// export interface IncomeSourcesResponse {
+//   interview_type: string;
+//   total_enrollments: number;
+//   rows: IncomeSources[];
+// }
+
+// export async function fetchIncomeSourcesData(): Promise<IncomeSourcesResponse> {
+//   const res = await apiClient.get<IncomeSourcesResponse>(
+//     "/monitor/baseline/income-sources",
+//   );
+//   return res.data;
+// }
+
+// /**
+//  * Computes the average number_of_income_sources across all fetched rows.
+//  * Returns null if there are no rows to average.
+//  */
+// export function computeAvgIncomeSources(
+//   data: IncomeSourcesResponse,
+// ): number | null {
+//   if (!data?.rows?.length) return null;
+
+//   const sum = data.rows.reduce(
+//     (acc, row) => acc + (row.number_of_income_sources ?? 0),
+//     0,
+//   );
+
+//   return sum / data.rows.length;
+// }
+
+// // Productive Assets (baseline) — livestock & land
+// export interface ProductiveAssetRow {
+//   enrollment_id: number;
+//   total_livestock_count: string;
+//   total_livestock_value: string;
+//   has_land: number; // 1 = has land, 2 = no land
+//   land_size: string;
+//   land_unit: string;
+//   business_capital: string;
+// }
+
+// export interface ProductiveAssetResponse {
+//   interview_type: string;
+//   total_enrollments: number;
+//   rows: ProductiveAssetRow[];
+// }
+
+// export async function fetchProductiveAssetBaseline(): Promise<ProductiveAssetResponse> {
+//   const res = await apiClient.get<ProductiveAssetResponse>(
+//     "/monitor/baseline/productive-asset",
+//   );
+//   return res.data;
+// }
+
+// /**
+//  * COVERAGE (used for the % chart):
+//  * Counts households that have livestock (count > 0),
+//  * land (has_land === 1), and business capital (> 0).
+//  * These are turned into percentages by dividing by totalRows.
+//  */
+// export function computeProductiveAssetTotals(data: ProductiveAssetResponse): {
+//   totalWithLivestock: number;
+//   totalWithLand: number;
+//   totalWithBusinessCapital: number;
+//   totalRows: number;
+// } {
+//   let totalWithLivestock = 0;
+//   let totalWithLand = 0;
+//   let totalWithBusinessCapital = 0;
+
+//   for (const row of data.rows) {
+//     const livestockCount = parseFloat(row.total_livestock_count);
+//     if (!Number.isNaN(livestockCount) && livestockCount > 0) {
+//       totalWithLivestock += 1;
+//     }
+//     if (row.has_land === 1) {
+//       totalWithLand += 1;
+//     }
+//     const businessCapital = parseFloat(row.business_capital);
+//     if (!Number.isNaN(businessCapital) && businessCapital > 0) {
+//       totalWithBusinessCapital += 1;
+//     }
+//   }
+
+//   return {
+//     totalWithLivestock,
+//     totalWithLand,
+//     totalWithBusinessCapital,
+//     totalRows: data.rows.length,
+//   };
+// }
+
+// /**
+//  * TRUE AVERAGES:
+//  * Average livestock count, average land size, average business capital
+//  * per household — only counting rows with a valid (non-NaN) number.
+//  */
+// export function computeProductiveAssetAverages(data: ProductiveAssetResponse): {
+//   avgLivestockCount: number;
+//   avgLandSize: number;
+//   avgBusinessCapital: number;
+//   livestockN: number;
+//   landN: number;
+//   capitalN: number;
+// } {
+//   let livestockSum = 0,
+//     landSum = 0,
+//     capitalSum = 0;
+//   let livestockN = 0,
+//     landN = 0,
+//     capitalN = 0;
+
+//   for (const row of data.rows) {
+//     const l = parseFloat(row.total_livestock_count);
+//     if (!Number.isNaN(l)) {
+//       livestockSum += l;
+//       livestockN++;
+//     }
+
+//     const land = parseFloat(row.land_size);
+//     if (!Number.isNaN(land)) {
+//       landSum += land;
+//       landN++;
+//     }
+
+//     const cap = parseFloat(row.business_capital);
+//     if (!Number.isNaN(cap)) {
+//       capitalSum += cap;
+//       capitalN++;
+//     }
+//   }
+
+//   return {
+//     avgLivestockCount: livestockN > 0 ? livestockSum / livestockN : 0,
+//     avgLandSize: landN > 0 ? landSum / landN : 0,
+//     avgBusinessCapital: capitalN > 0 ? capitalSum / capitalN : 0,
+//     livestockN,
+//     landN,
+//     capitalN,
+//   };
+// }
+
+// export interface ShockExperiencedRow {
+//   enrollment_id: number;
+//   shocks_experienced_12m: string;
+//   main_coping_strategies: string;
+//   perceived_coping_capacity: string;
+//   received_early_warning: string;
+//   primary_warning_source: string;
+// }
+
+// export interface ShockExperiencedResponse {
+//   interview_type: string;
+//   total_enrollments: number;
+//   rows: ShockExperiencedRow[];
+// }
+
+// export async function fetchShockExperiencedBaseline(): Promise<ShockExperiencedResponse> {
+//   const res = await apiClient.get<ShockExperiencedResponse>(
+//     "monitor/baseline/shock-response",
+//   );
+//   return res.data;
+// }
+
+// export interface ShockCount {
+//   value: string;
+//   count: number;
+// }
+
+// /**
+//  * shocks_experienced_12m arrives as a stringified Python list, e.g. "['3', '4']".
+//  * Pull out the digits rather than JSON.parse (single quotes aren't valid JSON)
+//  * and tally how many households reported each shock value.
+//  */
+// export function computeShocksExperiencedCounts(
+//   data: ShockExperiencedResponse,
+// ): ShockCount[] {
+//   const counts: Record<string, number> = {};
+
+//   for (const row of data.rows) {
+//     const raw = row.shocks_experienced_12m;
+//     if (!raw) continue;
+
+//     const matches = String(raw).match(/\d+/g);
+//     if (!matches) continue;
+
+//     for (const value of matches) {
+//       counts[value] = (counts[value] ?? 0) + 1;
+//     }
+//   }
+
+//   return Object.entries(counts).map(([value, count]) => ({ value, count }));
+// }
+
+// export interface CopingCapacityCount {
+//   value: string;
+//   count: number;
+// }
+
+// export interface CopingCapacityTrendPoint {
+//   stage: string;
+//   score: number | null;
+// }
+
+// /**
+//  * perceived_coping_capacity is a single string digit per row (e.g. "1"–"4").
+//  * Average it across all rows that have a valid numeric value.
+//  */
+// export function computeAvgPerceivedCopingCapacity(
+//   data: ShockExperiencedResponse,
+// ): number | null {
+//   const scores = data.rows
+//     .map((row) => Number(row.perceived_coping_capacity))
+//     .filter((n) => Number.isFinite(n) && n > 0);
+
+//   if (scores.length === 0) return null;
+//   return scores.reduce((sum, n) => sum + n, 0) / scores.length;
+// }
+
+// /** Tally how many households reported each coping-capacity score (1–4). */
+// export function computeCopingCapacityDistribution(
+//   data: ShockExperiencedResponse,
+// ): CopingCapacityCount[] {
+//   const counts: Record<string, number> = {};
+
+//   for (const row of data.rows) {
+//     const val = row.perceived_coping_capacity;
+//     if (!val) continue;
+//     counts[val] = (counts[val] ?? 0) + 1;
+//   }
+
+//   return Object.entries(counts)
+//     .map(([value, count]) => ({ value, count }))
+//     .sort((a, b) => a.value.localeCompare(b.value));
+// }
+
+// export async function fetchShockExperiencedMidline(): Promise<ShockExperiencedResponse> {
+//   const res = await apiClient.get<ShockExperiencedResponse>(
+//     'monitor/midline/shock-response'
+//   )
+//   return res.data
+// }
+
+
+// export interface MainCopingStrategyCount {
+//   value: string;
+//   count: number;
+// }
+
+// /**
+//  * main_coping_strategies arrives as a stringified Python list, e.g. "['5']" or "['2', '6']".
+//  * Households can report more than one strategy, so counts are per-strategy, not per-household.
+//  */
+// export function computeMainCopingStrategiesCounts(
+//   data: ShockExperiencedResponse,
+// ): MainCopingStrategyCount[] {
+//   const counts: Record<string, number> = {};
+
+//   for (const row of data.rows) {
+//     const raw = row.main_coping_strategies;
+//     if (!raw) continue;
+
+//     const matches = String(raw).match(/\d+/g);
+//     if (!matches) continue;
+
+//     for (const value of matches) {
+//       counts[value] = (counts[value] ?? 0) + 1;
+//     }
+//   }
+
+//   return Object.entries(counts).map(([value, count]) => ({ value, count }));
+// }
+
+============
+=================
+=======================
+
+// computeAvgIncomeSources,
+  // fetchIncomeSourcesData,
+  // fetchProductiveAssetBaseline,
+  // computeProductiveAssetTotals,
+  // computeProductiveAssetAverages,
+  // fetchShockExperiencedBaseline,
+  // computeShocksExperiencedCounts,
+  // computeAvgPerceivedCopingCapacity,
+  // fetchShockExperiencedMidline,
+  // computeCopingCapacityDistribution,
+  // computeMainCopingStrategiesCounts,
+  // type MainCopingStrategyCount,
+  // type ShockExperiencedResponse,
+  // type ProductiveAssetResponse,
+  // type IncomeSourcesResponse,
+
+ // --- Live stat: avg income sources (baseline) ---
+  // const [incomeSourcesData, setIncomeSourcesData] =
+  //   useState<IncomeSourcesResponse | null>(null);
+
+
+
+    // const loadIncomeSourcesData = async () => {
+    //   try {
+    //     const data = await fetchIncomeSourcesData();
+    //     if (isMounted) {
+    //       setIncomeSourcesData(data);
+    //     }
+    //   } catch (err) {
+    //     console.error("Failed to fetch income sources data:", err);
+    //     if (isMounted) {
+    //       setIncomeSourcesError("---");
+    //     }
+    //   }
+    // };
+
+
+//   try {
+    //     const data = await fetchProductiveAssetBaseline();
+    //     if (isMounted) {
+    //       setProductiveAssetData(data);
+    //     }
+    //   } catch (err) {
+    //     console.error("Failed to fetch productive asset data:", err);
+    //     if (isMounted) {
+    //       setProductiveAssetError("---");
+    //     }
+    //   }
+    // };
+
+    // const loadShockData = async () => {
+    //   try {
+    //     const data = await fetchShockExperiencedBaseline();
+    //     if (isMounted) {
+    //       setShockData(data);
+    //     }
+    //   } catch (err) {
+    //     console.error("Failed to fetch shocks experienced data:", err);
+    //     if (isMounted) {
+    //       setShockError("---");
+    //     }
+    //   }
+    // };
+
+    // const loadShockMidlineData = async () => {
+    //   try {
+    //     const data = await fetchShockExperiencedMidline();
+    //     if (isMounted) {
+    //       setShockMidlineData(data);
+    //     }
+    //   } catch (err) {
+    //     console.error("Failed to fetch shocks experienced midline data:", err);
+    //     if (isMounted) {
+    //       setShockMidlineError("---");
+    //     }
+    //   }
+    // };
+
+
+// loadIncomeSourcesData();
+    // loadProductiveAssetData();
+    // loadShockData();
+    // loadShockMidlineData();
+// --- Productive assets: % of households owning each asset (coverage rate) ---
+  // const productiveAssetTotals = productiveAssetData
+  //   ? computeProductiveAssetTotals(productiveAssetData)
+  //   : null;
+
+  // const pctWithLivestock =
+  //   productiveAssetTotals && productiveAssetTotals.totalRows > 0
+  //     ? Math.round(
+  //         (productiveAssetTotals.totalWithLivestock /
+  //           productiveAssetTotals.totalRows) *
+  //           100,
+  //       )
+  //     : 0;
+
+  // const pctWithLand =
+  //   productiveAssetTotals && productiveAssetTotals.totalRows > 0
+  //     ? Math.round(
+  //         (productiveAssetTotals.totalWithLand /
+  //           productiveAssetTotals.totalRows) *
+  //           100,
+  //       )
+  //     : 0;
+
+  // const pctWithBusinessCapital =
+  //   productiveAssetTotals && productiveAssetTotals.totalRows > 0
+  //     ? Math.round(
+  //         (productiveAssetTotals.totalWithBusinessCapital /
+  //           productiveAssetTotals.totalRows) *
+  //           100,
+  //       )
+  //     : 0;
+
+  // const productiveAssets = [
+  //   {
+  //     name: t.livestockChickenDucks,
+  //     baseline: pctWithLivestock,
+  //     endline: 0,
+  //     baselineCount: productiveAssetTotals?.totalWithLivestock ?? 0,
+  //     endlineCount: 0,
+  //   },
+  //   {
+  //     name: t.landOwnership,
+  //     baseline: pctWithLand,
+  //     endline: 0,
+  //     baselineCount: productiveAssetTotals?.totalWithLand ?? 0,
+  //     endlineCount: 0,
+  //   },
+  //   {
+  //     name: t.businessCapital,
+  //     baseline: pctWithBusinessCapital,
+  //     endline: 0,
+  //     baselineCount: productiveAssetTotals?.totalWithBusinessCapital ?? 0,
+  //     endlineCount: 0,
+  //   },
+  // ];
+  // const copingTotalRows = shockData?.rows.length ?? 0;
+
+  // const mainCopingCounts: MainCopingStrategyCount[] = shockData
+  //   ? computeMainCopingStrategiesCounts(shockData)
+  //   : [];
+
+  // const negativeCoping = Object.entries(COPING_STRATEGY_LABELS)
+  //   .map(([code, label]) => {
+  //     const match = mainCopingCounts.find((c) => c.value === code);
+  //     const count = match?.count ?? 0;
+  //     return {
+  //       name: label,
+  //       baseline:
+  //         copingTotalRows > 0 ? Math.round((count / copingTotalRows) * 100) : 0,
+  //       endline: 0, // no endline endpoint yet
+  //       baselineCount: count,
+  //     };
+  //   })
+  //   .sort((a, b) => b.baseline - a.baseline); // show most common first
+
+// const avgCopingCapacity = shockData
+  //   ? computeAvgPerceivedCopingCapacity(shockData)
+  //   : null;
+
+  // const avgCopingCapacityMidline = shockMidlineData
+  //   ? computeAvgPerceivedCopingCapacity(shockMidlineData)
+  //   : null;
+
+  // // those endpoints exist, matching the foodInsecurityTrend pattern.
+  // const copingCapacityTrend = [
+  //   {
+  //     stage: stageLabels["baseline"],
+  //     score:
+  //       avgCopingCapacity !== null
+  //         ? Number(avgCopingCapacity.toFixed(2))
+  //         : null,
+  //   },
+  //   {
+  //     stage: stageLabels["midline"],
+  //     score:
+  //       avgCopingCapacityMidline !== null
+  //         ? Number(avgCopingCapacityMidline.toFixed(2))
+  //         : null,
+  //   },
+  //   { stage: stageLabels["endline"], score: null },
+  // ];
+  // const shockTotalRows = shockData?.rows.length ?? 0;
+
+  // const shocksExperienced = shockData
+  //   ? computeShocksExperiencedCounts(shockData)
+  //       .map((item) => ({
+  //         value: item.value, // keep raw value, e.g. "3"
+  //         label: `${item.value} - ${SHOCK_VALUE_LABELS[item.value] ?? "Unknown"}`,
+  //         pct:
+  //           shockTotalRows > 0
+  //             ? Math.round((item.count / shockTotalRows) * 100)
+  //             : 0,
+  //         count: item.count,
+  //       }))
+  //       .sort((a, b) => b.pct - a.pct)
+  //   : [];
