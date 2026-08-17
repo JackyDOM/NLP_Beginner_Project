@@ -1,0 +1,80 @@
+
+          {/* <Card
+            title={t.reductionInNegativeCopingStrategies}
+            description={t.reductionInNegativeCopingStrategiesSub}
+          >
+            <div className="h-[500px] w-full">
+              {shockError ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-400">
+                  <span>{shockError}</span>
+                </div>
+              ) : shockData === null ? (
+                <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+                  Loading…
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={negativeCoping}
+                    margin={{ top: 24, right: 20, left: 30, bottom: 60 }}
+                    barCategoryGap="28%"
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#E2E8F0"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="label"
+                      axisLine={{ stroke: "#E2E8F0" }}
+                      tickLine={false}
+                      tick={{ fill: "#475569", fontSize: 11, fontWeight: 500 }}
+                      interval={0}
+                      angle={-35}
+                      textAnchor="end"
+                      height={70}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#94A3B8", fontSize: 11 }}
+                      width={36}
+                      label={{
+                        value: t.percentOfHouseholds,
+                        angle: -90,
+                        position: "insideLeft",
+                        style: { fill: "#94A3B8", fontSize: 12 },
+                      }}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
+                      formatter={(val: number, _name, entry: any) => [
+                        `${val}% (n=${entry.payload.count})`,
+                        t.percentOfHouseholds,
+                      ]}
+                    />
+                    <Bar
+                      dataKey="pct"
+                      name={t.baseline}
+                      fill="#007EA7"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={48}
+                    >
+                      <LabelList
+                        dataKey="pct"
+                        position="top"
+                        formatter={(v: number) => `${v}%`}
+                        style={{
+                          fill: "#0C4A6E",
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </Card> */}
